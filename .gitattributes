@@ -1,0 +1,11 @@
+* text=auto
+*.vbs text eol=crlf
+*.bas text eol=crlf
+*.ps1 text eol=crlf
+*.py text eol=lf
+*.cs text eol=lf
+*.md text eol=lf
+*.swp binary
+*.drwdot binary
+*.slddrt binary
+generator.ini -text

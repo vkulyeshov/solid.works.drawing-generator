@@ -1,0 +1,108 @@
+"""Check portable source layout, native source consistency, and external outputs."""
+from pathlib import Path
+import ast
+import os
+import re
+import sys
+import unittest
+from unittest.mock import patch
+
+sys.dont_write_bytecode = True
+REPOSITORY = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPOSITORY/'tools'))
+from build_swp import Compound, decompress
+from project_paths import external_path, work_path
+from rebuild_native import rebuild, module_source
+from vba_project import empty_project
+
+
+class RepositoryTests(unittest.TestCase):
+    def test_native_source_matches_bas(self):
+        path = rebuild(REPOSITORY/'generator.bas', work_path('repository_tests/source.swp'))
+        container = Compound(path)
+        module = next(i for i in container.streams if container.name(i) == 'Macro11')
+        expected = module_source(REPOSITORY/'generator.bas')
+        self.assertEqual(decompress(container.streams[module]), expected)
+
+    def test_single_canonical_source(self):
+        self.assertTrue((REPOSITORY/'generator.bas').is_file())
+        self.assertFalse((REPOSITORY/'generator.utf8.txt').exists())
+        self.assertFalse((REPOSITORY/'generator.swp').exists())
+        source = (REPOSITORY/'generator.bas').read_text('utf8')
+        self.assertEqual(source.count('Public Sub main()'), 1)
+
+    def test_empty_project_has_no_generator_code(self):
+        project = empty_project()
+        module = next(i for i in project.streams if project.name(i) == 'Macro11')
+        self.assertEqual(project.streams[module], b'')
+
+    def test_external_output_guards(self):
+        for path in [REPOSITORY, REPOSITORY/'tmp', REPOSITORY/'tools/../output']:
+            with self.assertRaises(ValueError):
+                external_path(path)
+        with patch.dict(os.environ, {'SW_DRAWING_WORK_DIR':str(REPOSITORY/'temporary')}):
+            with self.assertRaises(ValueError):
+                work_path('build')
+        self.assertNotIn(REPOSITORY, work_path('unit').parents)
+
+    def test_rebuild_is_external_and_preserves_source(self):
+        source = REPOSITORY/'generator.bas'
+        expected = source.read_bytes()
+        output = rebuild(REPOSITORY/'generator.bas', work_path('repository_tests/rebuilt.swp'))
+        container = Compound(output)
+        module = next(i for i in container.streams if container.name(i) == 'Macro11')
+        self.assertEqual(decompress(container.streams[module]), module_source(source))
+        self.assertEqual(source.read_bytes(), expected)
+
+    def test_source_edits_reach_native_output(self):
+        source = work_path('repository_tests/modified.bas')
+        source.parent.mkdir(parents=True, exist_ok=True)
+        original = (REPOSITORY/'generator.bas').read_text('utf8')
+        source.write_text(original+"\n' Source freshness regression marker\n",encoding='utf8')
+        output = rebuild(source, work_path('repository_tests/modified.swp'))
+        native = Compound(output)
+        module = next(i for i in native.streams if native.name(i) == 'Macro11')
+        self.assertIn(b'Source freshness regression marker',decompress(native.streams[module]))
+
+    def test_sources_parse_and_keep_english_prose(self):
+        text_suffixes = {'.py','.ps1','.cs','.vbs','.bas','.txt','.md'}
+        for path in REPOSITORY.rglob('*'):
+            if '.git' in path.relative_to(REPOSITORY).parts or not path.is_file():
+                continue
+            if path.suffix == '.py':
+                ast.parse(path.read_text('utf8'), filename=str(path))
+            if path.suffix in text_suffixes:
+                text = path.read_text('utf8')
+                if path.suffix == '.bas':
+                    text = re.sub(r'"(?:[^"\n]|"")*"', '""', text)
+                self.assertTrue(text.isascii(), str(path))
+
+    def test_cyrillic_survives_native_source_encoding(self):
+        source = REPOSITORY/'generator.bas'
+        original = source.read_text('utf8')
+        literals = re.findall(r'"(?:[^"\n]|"")*"',original)
+        localized = [literal for literal in literals if not literal.isascii()]
+        self.assertGreater(len(localized), 0)
+        path = rebuild(source, work_path('repository_tests/cyrillic.swp'))
+        native = Compound(path)
+        module = next(i for i in native.streams if native.name(i) == 'Macro11')
+        decoded = decompress(native.streams[module]).decode('cp1251')
+        for literal in localized:
+            self.assertIn(literal, decoded)
+
+    def test_repository_has_no_generated_data(self):
+        forbidden_dirs = {'tmp','temp','output','artifacts','build','dist','Ready','Backups','__pycache__'}
+        forbidden_suffixes = {'.log','.tmp','.zip','.pdf','.png','.pyc','.swp','.slddrw','.sldprt','.sldasm'}
+        for path in REPOSITORY.rglob('*'):
+            if '.git' in path.relative_to(REPOSITORY).parts:
+                continue
+            self.assertFalse(path.is_dir() and path.name in forbidden_dirs, str(path))
+            self.assertFalse(path.is_file() and path.suffix.lower() in forbidden_suffixes, str(path))
+
+    def test_four_runtime_templates(self):
+        self.assertEqual({p.name for p in (REPOSITORY/'templates').iterdir()}, {
+            'A4.landscape.drwdot','A4.portrait.drwdot','A3.landscape.drwdot','A3.portrait.drwdot'})
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
