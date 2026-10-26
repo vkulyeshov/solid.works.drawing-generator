@@ -11,6 +11,8 @@ import subprocess
 import time
 
 base=Path(__file__).resolve().parents[1]
+launcher=base/'build/bin/launcher.vbs'
+assert launcher.is_file(),'Runtime package not found; run build.vbs first'
 workspace=base.parent
 fixture=work_path('paper_formats/A4.landscape')
 pack=fixture/'out'
@@ -19,7 +21,7 @@ audit.mkdir(parents=True,exist_ok=True)
 if not (pack/'generation-state.tsv').exists():
     subprocess.run([sys.executable,'-B',str(base/'tests/test_paper_formats.py'),'--case','A4.landscape'],check=True)
 host=Path(os.environ['WINDIR'])/'System32/cscript.exe'
-args=[str(host),'//nologo',str(base/'launcher.vbs'),
+args=[str(host),'//nologo',str(launcher),
       '/input:'+str(fixture/'input/CarFenderGusset.SLDPRT'),
       '/ini:'+str(fixture/'test.ini'),'/format:A4','/orientation:landscape','/out:'+str(pack),'/background']
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
@@ -29,7 +31,6 @@ def artifacts():
 def execute(name, interrupt=False):
     started=time.monotonic()
     environment=dict(os.environ)
-    environment.setdefault('SW_DRAWING_PYTHON',sys.executable)
     process=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=environment)
     lines=[]; session=None; interrupted=False; interruption=None
     for raw in iter(process.stdout.readline,b''):
@@ -76,6 +77,6 @@ assert pdf.stat().st_size==int(rows[0][14])
 assert (pack/'Drawings'/(rows[0][11]+'.slddrw')).stat().st_size==int(rows[0][13])
 results.append({'test':'checkpoint_commits_both_artifacts','passed':True})
 data={'source_sha256':sha(base/'generator.bas'),
-      'launcher_sha256':sha(base/'launcher.vbs'),'checks':results}
+      'launcher_sha256':sha(launcher),'checks':results}
 (audit/'incremental-integration.json').write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf8')
 print('Final incremental integration checks passed',flush=True)

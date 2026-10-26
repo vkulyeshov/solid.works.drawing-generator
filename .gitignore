@@ -1,4 +1,4 @@
-# Generated data belongs outside this repository. These rules are a fallback.
+# Release artifacts use /build/. Test fixtures and temporary data stay outside.
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -9,7 +9,7 @@ tmp/
 temp/
 output/
 artifacts/
-build/
+/build/
 dist/
 Ready/
 Backups/

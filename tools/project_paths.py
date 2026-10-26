@@ -1,4 +1,4 @@
-"""Shared locations for generated files; the source checkout stays clean."""
+"""Locations for ignored release artifacts and external test data."""
 from pathlib import Path
 import os
 import sys
@@ -6,6 +6,16 @@ import sys
 sys.dont_write_bytecode = True
 REPOSITORY = Path(__file__).resolve().parents[1]
 WORKSPACE = REPOSITORY.parent
+BUILD_DIRECTORY = REPOSITORY / 'build'
+
+
+def build_path(value=BUILD_DIRECTORY):
+    """Allow release artifacts in build/ or outside the source checkout."""
+    path = Path(value).expanduser().resolve()
+    if path == REPOSITORY or (REPOSITORY in path.parents
+                             and path != BUILD_DIRECTORY and BUILD_DIRECTORY not in path.parents):
+        raise ValueError(f'Build output inside the repository must stay under build/: {path}')
+    return path
 
 
 def external_path(value):

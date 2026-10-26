@@ -14,6 +14,8 @@ import os
 import subprocess
 
 base = Path(__file__).resolve().parents[1]
+launcher = base / 'build/bin/launcher.vbs'
+assert launcher.is_file(), 'Runtime package not found; run build.vbs first'
 fixture = work_path('paper_formats/A4.landscape')
 pack = fixture / 'out'
 state = pack / 'generation-state.tsv'
@@ -36,8 +38,8 @@ ini = fixture / 'retry-test.ini'
 settings = (fixture / 'test.ini').read_text('utf-16')
 settings += '\r\nMaxJobAttempts=2\r\nJobsPerBatch=1\r\n'
 ini.write_bytes(settings.encode('utf-16'))
-environment = dict(os.environ, SW_DRAWING_PYTHON=sys.executable)
-command = [str(Path(os.environ['WINDIR']) / 'System32/cscript.exe'), '//nologo', str(base / 'launcher.vbs'),
+environment = dict(os.environ)
+command = [str(Path(os.environ['WINDIR']) / 'System32/cscript.exe'), '//nologo', str(launcher),
            '/input:' + str(fixture / 'input/CarFenderGusset.SLDPRT'), '/ini:' + str(ini),
            '/out:' + str(pack), '/format:A4', '/orientation:landscape', '/background']
 log = work_path('failed-job-recovery.log')

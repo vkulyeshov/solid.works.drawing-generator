@@ -1,4 +1,4 @@
-"""Rebuild a native VBA container into the external working directory."""
+"""Rebuild a native VBA container from the canonical BAS source."""
 from pathlib import Path
 import argparse
 import hashlib
@@ -8,7 +8,7 @@ import struct
 import sys
 sys.dont_write_bytecode = True
 from build_swp import Compound, decompress, compress
-from project_paths import REPOSITORY, external_path, work_path
+from project_paths import REPOSITORY, build_path, work_path
 from vba_project import empty_project
 
 # Source identity and VBA project format constants.
@@ -47,7 +47,7 @@ def module_source(source):
 
 
 def rebuild(source, output):
-    output = external_path(output)
+    output = build_path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     container = empty_project()
     directory = next(i for i in container.streams if container.name(i) == DIRECTORY_STREAM)

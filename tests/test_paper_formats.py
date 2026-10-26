@@ -2,6 +2,7 @@
 from pathlib import Path
 import sys
 sys.dont_write_bytecode = True
+sys.stdout.reconfigure(encoding='utf-8')
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/"tools"))
 from project_paths import work_path
 import argparse
@@ -20,8 +21,10 @@ audit=work_path('paper_formats')
 audit.mkdir(parents=True,exist_ok=True)
 parser=argparse.ArgumentParser()
 parser.add_argument('--case',default='A4.landscape',choices=['A4.landscape','A4.portrait','A3.landscape','A3.portrait','assembly','resume','mismatch'])
-parser.add_argument('--launcher',type=Path,default=base/'launcher.vbs',help='Use a packaged launcher to verify the runtime kit')
+parser.add_argument('--launcher',type=Path,default=base/'build/bin/launcher.vbs',help='Existing runtime launcher; defaults to build/bin/launcher.vbs')
 args=parser.parse_args()
+if not args.launcher.is_file():
+    parser.error('Runtime package not found. Run build.vbs first or supply --launcher FILE.')
 name=args.case
 host=Path(os.environ['WINDIR'])/'System32/cscript.exe'
 source=root/'model/CarFenderGusset.SLDPRT'
@@ -58,7 +61,6 @@ command=[str(host),'//nologo',str(args.launcher),'/input:'+str(inputfile),'/ini:
 started=time.monotonic()
 with (audit/(name+'.log')).open('wb') as log:
     environment=dict(os.environ)
-    environment.setdefault('SW_DRAWING_PYTHON',sys.executable)
     run=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT,env=environment)
     try:code=run.wait(timeout=480)
     except subprocess.TimeoutExpired:raise RuntimeError('CAD generation timed out; inspect the launcher-owned session before terminating it')
@@ -108,7 +110,7 @@ result={'test':name,'passed':True,'seconds':round(time.monotonic()-started,1),'e
         'launcher_sha256':hashlib.sha256(args.launcher.read_bytes()).hexdigest()}
 if (out/'generator.build.json').exists():
     build=json.loads((out/'generator.build.json').read_text('ascii'))
-    assert build['source_sha256']==result['source_sha256'],'The launcher did not build the current BAS source'
+    assert build['source_sha256']==result['source_sha256'],'Runtime package does not match current BAS source; run build.vbs first'
     result['macro_sha256']=build['macro_sha256']
 (audit/(name+'.json')).write_text(json.dumps(result,indent=2),encoding='utf8')
 print(json.dumps(result,indent=2))

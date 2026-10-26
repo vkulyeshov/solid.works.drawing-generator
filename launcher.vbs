@@ -46,8 +46,9 @@ Const CHECKPOINT_PDF_BYTES_FIELD = 14
 ' Files and serialized protocol values
 Const SETTINGS_FILENAME = "generator.ini"
 Const MACRO_FILENAME = "generator.swp"
-Const SOURCE_FILENAME = "generator.bas"
-Const BUILDER_RELATIVE_PATH = "tools\rebuild_native.py"
+Const MACRO_FILE_TYPE = "swp"
+Const BUILD_REPORT_SUFFIX = ".build.json"
+Const BIN_DIRECTORY = "bin"
 Const SHARED_LOCK_FILENAME = "SolidWorks_AirDuctDrawings.lock"
 Const CHECKPOINT_FILENAME = "generation-state.tsv"
 Const BACKGROUND_STATE_FILENAME = "background-state.ini"
@@ -107,69 +108,71 @@ Const SHELL_WINDOW_HIDDEN = 0
 Const SHELL_PROCESS_RUNNING = 0
 
 ' Run with cscript.exe. The worker owns COM; the controller remains responsive.
-' All paths passed to COM are absolute. Source checkouts build BAS with Python 3.
+' All paths passed to COM are absolute. This stage only runs a prebuilt VBA project.
 Dim fso, shell, named, sessionDir, progressFile, consoleLog, lockFile, lockOwned
 Dim outputDir, lastState, lastDone, lastTotal, lastOK, lastFailed, lastWarnings
 Dim lastMessage, recordsSeen, exitCode, startTime, isWorker, inputFile, iniFile
 Dim macroFile, scriptDir, runtimeMacro, capturedError, capturedDescription
-Dim sourceFile, builderFile, buildFromSource
 Dim currentStage
 Dim backgroundMode, backgroundVerified, backgroundPID
 Dim existingPIDAtStart, existingAliveAtEnd
 Dim paperFormat, paperOrientation, drawingTemplate, templatesDirectory
-Set fso = CreateObject("Scripting.FileSystemObject")
-Set shell = CreateObject("WScript.Shell")
-Set named = WScript.Arguments.Named
-Set consoleLog = Nothing
-backgroundMode = False: backgroundVerified = False: backgroundPID = 0
-existingPIDAtStart = 0: existingAliveAtEnd = False
-scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
-lockOwned = False
-exitCode = EXIT_SUCCESS
-isWorker = named.Exists("worker")
 
-If LCase(fso.GetFileName(WScript.FullName)) <> CONSOLE_HOST_FILENAME Then
-    Dim forwarded, arg
-    forwarded = Q(ConsoleHost()) & " //nologo " & Q(WScript.ScriptFullName)
-    For Each arg In WScript.Arguments
-        forwarded = forwarded & " " & Q(arg)
-    Next
-    shell.Run forwarded, SHELL_WINDOW_NORMAL, False
-    WScript.Quit EXIT_SUCCESS
-End If
+Sub Main()
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set shell = CreateObject("WScript.Shell")
+    Set named = WScript.Arguments.Named
+    Set consoleLog = Nothing
+    backgroundMode = False: backgroundVerified = False: backgroundPID = 0
+    existingPIDAtStart = 0: existingAliveAtEnd = False
+    scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
+    lockOwned = False
+    exitCode = EXIT_SUCCESS
+    isWorker = named.Exists("worker")
 
-On Error Resume Next
-If isWorker Then
-    sessionDir = fso.GetAbsolutePathName(named("worker"))
-    WorkerMain
-Else
-    ControllerMain
-End If
-capturedError = Err.Number
-capturedDescription = Err.Description & " (stage: " & currentStage & ")"
-On Error GoTo 0
-If capturedError <> 0 Then
-    exitCode = EXIT_LAUNCHER_FAILURE
-    If isWorker And Len(sessionDir) > 0 Then
-        exitCode = WorkerErrorExitCode(capturedError)
-        WriteWorkerResult exitCode, "ERROR " & capturedError & ": " & capturedDescription
-    Else
-        Say "ERROR " & capturedError & ": " & capturedDescription
+    If LCase(fso.GetFileName(WScript.FullName)) <> CONSOLE_HOST_FILENAME Then
+        Dim forwarded, arg
+        forwarded = Q(ConsoleHost()) & " //nologo " & Q(WScript.ScriptFullName)
+        For Each arg In WScript.Arguments
+            forwarded = forwarded & " " & Q(arg)
+        Next
+        shell.Run forwarded, SHELL_WINDOW_NORMAL, False
+        WScript.Quit EXIT_SUCCESS
     End If
-End If
-If Not isWorker Then
+
     On Error Resume Next
-    If Not (consoleLog Is Nothing) Then
-        consoleLog.Close
+    If isWorker Then
+        sessionDir = fso.GetAbsolutePathName(named("worker"))
+        WorkerMain
+    Else
+        ControllerMain
     End If
-    ArchiveDiagnostics
+    capturedError = Err.Number
+    capturedDescription = Err.Description & " (stage: " & currentStage & ")"
     On Error GoTo 0
-End If
-ReleaseLock
-WScript.Quit exitCode
+    If capturedError <> 0 Then
+        exitCode = EXIT_LAUNCHER_FAILURE
+        If isWorker And Len(sessionDir) > 0 Then
+            exitCode = WorkerErrorExitCode(capturedError)
+            WriteWorkerResult exitCode, "ERROR " & capturedError & ": " & capturedDescription
+        Else
+            Say "ERROR " & capturedError & ": " & capturedDescription
+        End If
+    End If
+    If Not isWorker Then
+        On Error Resume Next
+        If Not (consoleLog Is Nothing) Then
+            consoleLog.Close
+        End If
+        ArchiveDiagnostics
+        On Error GoTo 0
+    End If
+    ReleaseLock
+    WScript.Quit exitCode
+End Sub
 
 Sub ControllerMain()
-    Dim key, positional, content, context, child, command
+    Dim key, positional, content, context, child, command, buildReport
     Dim lastHeartbeat, result, available
     currentStage = "arguments"
     If named.Exists("help") Or named.Exists("?") Then
@@ -178,7 +181,7 @@ Sub ControllerMain()
     End If
     For Each key In named
         Select Case LCase(key)
-            Case "input", "ini", "out", "background", "reset", "format", "orientation", "template", "templates"
+            Case "input", "ini", "out", "background", "reset", "format", "orientation", "template", "templates", "macro"
             Case Else
                 Err.Raise vbObjectError + ERR_ARGUMENTS, , "Unknown option: /" & key & ". Use /help."
         End Select
@@ -209,9 +212,12 @@ Sub ControllerMain()
     inputFile = AbsolutePath(inputFile)
     iniFile = AbsolutePath(iniFile)
     macroFile = fso.BuildPath(scriptDir, MACRO_FILENAME)
-    sourceFile = fso.BuildPath(scriptDir, SOURCE_FILENAME)
-    builderFile = fso.BuildPath(scriptDir, BUILDER_RELATIVE_PATH)
-    buildFromSource = fso.FileExists(sourceFile)
+    If named.Exists("macro") Then
+        If Len(named("macro")) = 0 Then
+            Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "A compiled VBA file is required after /macro:."
+        End If
+        macroFile = AbsolutePath(named("macro"))
+    End If
     If Not fso.FileExists(inputFile) Then
         Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "Input file not found: " & inputFile
     End If
@@ -223,12 +229,11 @@ Sub ControllerMain()
     If Not fso.FileExists(iniFile) Then
         Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "INI file not found: " & iniFile
     End If
-    If buildFromSource Then
-        If Not fso.FileExists(builderFile) Then
-            Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "Source build tools not found: " & builderFile
-        End If
-    ElseIf Not fso.FileExists(macroFile) Then
-        Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "Generator source or packaged macro not found beside launcher."
+    If LCase(fso.GetExtensionName(macroFile)) <> MACRO_FILE_TYPE Then
+        Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "Macro must be a compiled .swp file."
+    End If
+    If Not fso.FileExists(macroFile) Then
+        Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "Packaged macro not found: " & macroFile & ". Use a complete runtime package or select an existing project with /macro:FILE.swp."
     End If
     If Len(outputDir) > 0 Then
         outputDir = AbsolutePath(outputDir)
@@ -255,10 +260,13 @@ Sub ControllerMain()
     Set consoleLog = fso.CreateTextFile(fso.BuildPath(sessionDir, LAUNCHER_LOG_FILENAME), False, True)
     consoleLog.Close: Set consoleLog = Nothing
     runtimeMacro = fso.BuildPath(sessionDir, MACRO_FILENAME)
-    If buildFromSource Then
-        BuildNativeMacro
-    Else
-        fso.CopyFile macroFile, runtimeMacro, False
+    fso.CopyFile macroFile, runtimeMacro, False
+    buildReport = fso.BuildPath(fso.GetParentFolderName(macroFile), fso.GetBaseName(macroFile) & BUILD_REPORT_SUFFIX)
+    If Not fso.FileExists(buildReport) And LCase(fso.GetFileName(fso.GetParentFolderName(macroFile))) = BIN_DIRECTORY Then
+        buildReport = fso.BuildPath(fso.GetParentFolderName(fso.GetParentFolderName(macroFile)), fso.GetBaseName(macroFile) & BUILD_REPORT_SUFFIX)
+    End If
+    If fso.FileExists(buildReport) Then
+        fso.CopyFile buildReport, fso.BuildPath(sessionDir, BUILD_REPORT_FILENAME), False
     End If
     If named.Exists("reset") Then
         If fso.FileExists(fso.BuildPath(outputDir, CHECKPOINT_FILENAME)) Then
@@ -383,35 +391,6 @@ Sub ControllerMain()
         Say "Artifacts: " & outputDir
     End If
     Say "Exit code: " & exitCode
-End Sub
-
-Sub BuildNativeMacro()
-    Dim pythonPath, command, child, details, errorNumber, errorText
-    currentStage = "building native VBA macro"
-    Say "Building generator.bas into the external launcher session"
-    pythonPath = shell.Environment("PROCESS")("SW_DRAWING_PYTHON")
-    If Len(pythonPath) > 0 Then
-        command = Q(pythonPath)
-    Else
-        command = "py -3"
-    End If
-    command = command & " -B " & Q(builderFile) & " --source " & Q(sourceFile) & " --output " & Q(runtimeMacro)
-    On Error Resume Next
-    Set child = shell.Exec(command)
-    errorNumber = Err.Number: errorText = Err.Description
-    Err.Clear
-    On Error GoTo 0
-    If errorNumber <> 0 Then
-        Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "Python 3 is required to build generator.bas. Install Python with the Windows py launcher, or set SW_DRAWING_PYTHON to python.exe. " & errorText
-    End If
-    details = child.StdOut.ReadAll & child.StdErr.ReadAll
-    If child.ExitCode <> 0 Then
-        Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "VBA build failed: " & CleanLine(details)
-    End If
-    If Not fso.FileExists(runtimeMacro) Then
-        Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "VBA build did not produce generator.swp."
-    End If
-    Say "VBA build completed"
 End Sub
 
 Sub ResolveDrawingSettings(ByVal content)
@@ -970,12 +949,13 @@ Sub Usage()
     WScript.Echo "cscript //nologo launcher.vbs MODEL [INI] [OUTPUT]"
     WScript.Echo "cscript //nologo launcher.vbs /input:MODEL [/ini:INI] [/out:OUTPUT]"
     WScript.Echo "Drawing options: /format:A4|A3 /orientation:landscape|portrait /template:FILE /templates:DIRECTORY"
-    WScript.Echo "Defaults: A3 landscape, templates\A3.landscape.drwdot beside this script. Explicit template controls orientation."
+    WScript.Echo "Without INI format keys: A3 landscape, templates\A3.landscape.drwdot. Explicit template controls orientation."
     WScript.Echo "Add /background to keep a separate SolidWorks window outside the screen and exit when finished."
     WScript.Echo "Quote arguments containing spaces. Default INI is beside this script."
     WScript.Echo "Default output: DrawingPack_YYYYMMDD_HHMMSS beside the input model."
-    WScript.Echo "Source checkout: generator.bas is built outside Git using Python 3 (py -3 or SW_DRAWING_PYTHON)."
-    WScript.Echo "Prebuilt runtime kits run generator.swp without Python."
+    WScript.Echo "Runtime only: this script never builds BAS and does not require Python."
+    WScript.Echo "Use /macro:FILE.swp to select an existing macro; default is generator.swp beside this script."
+    WScript.Echo "See README.md beside this script for runtime instructions."
     WScript.Echo "Existing output resumes generation-state.tsv. Delete that file, or add /reset, to regenerate all jobs."
     WScript.Echo "JobsPerBatch in INI limits one batch (default 8). Background batches restart SolidWorks automatically."
     WScript.Echo "Failed jobs do not stop later batches. MaxJobAttempts in INI limits persistent attempts per job (default 3)."
@@ -1114,3 +1094,5 @@ Function CheckpointHandled(ByVal path)
         End If
     Next
 End Function
+
+Main

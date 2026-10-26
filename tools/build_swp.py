@@ -160,8 +160,8 @@ if __name__=='__main__':
                 # Version-independent header and no performance cache (MS-OVBA 2.3.4.1).
                 c.streams[i]=bytes.fromhex('cc61ffff000000')
             elif c.name(i).startswith('__SRP_'): c.streams[i]=b''
-        from project_paths import external_path
-        c.write(external_path(sys.argv[3]))
+        from project_paths import build_path
+        c.write(build_path(sys.argv[3]))
         check=Compound(sys.argv[3])
         assert decompress(check.streams[module_id])==newsource
         print('Wrote',sys.argv[3])

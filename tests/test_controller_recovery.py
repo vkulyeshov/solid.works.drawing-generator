@@ -49,9 +49,13 @@ worker = '''Sub WorkerMain()
 End Sub'''
 modified, replacements = re.subn(r'(?ms)^Sub WorkerMain\(\).*?^End Sub', lambda _: worker, source)
 assert replacements == 1
-launcher = fixture / 'launcher.vbs'
+bin_dir = fixture / 'bin'
+bin_dir.mkdir(exist_ok=True)
+launcher = bin_dir / 'launcher.vbs'
 launcher.write_text(modified, encoding='utf8')
-(fixture / 'generator.swp').write_bytes(b'Unused worker fixture')
+(bin_dir / 'generator.swp').write_bytes(b'Unused worker fixture')
+report = fixture / 'generator.build.json'
+report.write_text('{"source_sha256": "fixture"}', encoding='ascii')
 (fixture / 'input.sldprt').write_bytes(b'Unused input fixture')
 ini = fixture / 'generator.ini'
 ini.write_text('PaperFormat=A4\r\nDrawingTemplate=' + str(base / 'templates/A4.landscape.drwdot') + '\r\n', encoding='utf-16')
@@ -65,10 +69,11 @@ for name, expected_code, expected_invocations in [('validation', 2, 1), ('startu
     row = ['JOB', '1', 'unused', 'Default', 'body', '', '1', 'False', 'False', '1', 'PENDING', '001_fixture', '', '0', '0', '0']
     (out / 'generation-state.tsv').write_bytes(('STATE\t3\r\n' + '\t'.join(row) + '\r\n').encode('utf-16'))
     command = [str(Path(os.environ['WINDIR']) / 'System32/cscript.exe'), '//nologo', str(launcher),
-               '/input:' + str(fixture / 'input.sldprt'), '/out:' + str(out)]
+               '/input:' + str(fixture / 'input.sldprt'), '/ini:' + str(ini), '/out:' + str(out)]
     run = subprocess.run(command, capture_output=True, timeout=30)
     assert run.returncode == expected_code, (name, run.returncode, run.stdout, run.stderr)
     assert int(marker.read_text('utf-16')) == expected_invocations, (name, run.stdout)
+    assert (out / 'generator.build.json').read_bytes() == report.read_bytes()
     results.append({'test': name, 'passed': True, 'invocations': expected_invocations})
 work_path('controller-recovery.json').write_text(json.dumps(results, indent=2), encoding='utf8')
 print('Controller recovery checks passed:', len(results))

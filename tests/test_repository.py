@@ -1,9 +1,10 @@
-"""Check portable source layout, native source consistency, and external outputs."""
+"""Check source consistency, ignored build artifacts, and external test outputs."""
 from pathlib import Path
 import ast
 import os
 import re
 import sys
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -11,9 +12,18 @@ sys.dont_write_bytecode = True
 REPOSITORY = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPOSITORY/'tools'))
 from build_swp import Compound, decompress
-from project_paths import external_path, work_path
+from project_paths import BUILD_DIRECTORY, build_path, external_path, work_path
 from rebuild_native import rebuild, module_source
 from vba_project import empty_project
+
+
+def source_paths():
+    """Prune Git metadata and the ignored release tree before walking sources."""
+    for parent, folders, files in os.walk(REPOSITORY):
+        folders[:] = [name for name in folders if name != '.git'
+                      and not (Path(parent) == REPOSITORY and name == 'build')]
+        for name in folders + files:
+            yield Path(parent) / name
 
 
 class RepositoryTests(unittest.TestCase):
@@ -37,13 +47,22 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(project.streams[module], b'')
 
     def test_external_output_guards(self):
-        for path in [REPOSITORY, REPOSITORY/'tmp', REPOSITORY/'tools/../output']:
+        for path in [REPOSITORY, REPOSITORY/'tmp', REPOSITORY/'tools/../output', BUILD_DIRECTORY]:
             with self.assertRaises(ValueError):
                 external_path(path)
         with patch.dict(os.environ, {'SW_DRAWING_WORK_DIR':str(REPOSITORY/'temporary')}):
             with self.assertRaises(ValueError):
                 work_path('build')
         self.assertNotIn(REPOSITORY, work_path('unit').parents)
+
+    def test_build_output_guards(self):
+        self.assertEqual(build_path(), BUILD_DIRECTORY)
+        self.assertEqual(build_path(BUILD_DIRECTORY/'bin/generator.swp'), BUILD_DIRECTORY/'bin/generator.swp')
+        self.assertEqual(build_path(work_path('package')), work_path('package'))
+        for path in [REPOSITORY, REPOSITORY/'templates', REPOSITORY/'README.md',
+                     BUILD_DIRECTORY/'../tools']:
+            with self.assertRaises(ValueError):
+                build_path(path)
 
     def test_rebuild_is_external_and_preserves_source(self):
         source = REPOSITORY/'generator.bas'
@@ -66,8 +85,8 @@ class RepositoryTests(unittest.TestCase):
 
     def test_sources_parse_and_keep_english_prose(self):
         text_suffixes = {'.py','.ps1','.cs','.vbs','.bas','.txt','.md'}
-        for path in REPOSITORY.rglob('*'):
-            if '.git' in path.relative_to(REPOSITORY).parts or not path.is_file():
+        for path in source_paths():
+            if not path.is_file():
                 continue
             if path.suffix == '.py':
                 ast.parse(path.read_text('utf8'), filename=str(path))
@@ -90,14 +109,18 @@ class RepositoryTests(unittest.TestCase):
         for literal in localized:
             self.assertIn(literal, decoded)
 
-    def test_repository_has_no_generated_data(self):
-        forbidden_dirs = {'tmp','temp','output','artifacts','build','dist','Ready','Backups','__pycache__'}
+    def test_generated_data_is_ignored_or_external(self):
+        forbidden_dirs = {'tmp','temp','output','artifacts','build','dist','Ready','bin','Backups','__pycache__'}
         forbidden_suffixes = {'.log','.tmp','.zip','.pdf','.png','.pyc','.swp','.slddrw','.sldprt','.sldasm'}
-        for path in REPOSITORY.rglob('*'):
-            if '.git' in path.relative_to(REPOSITORY).parts:
-                continue
+        for path in source_paths():
             self.assertFalse(path.is_dir() and path.name in forbidden_dirs, str(path))
             self.assertFalse(path.is_file() and path.suffix.lower() in forbidden_suffixes, str(path))
+        ignored = subprocess.run(['git', 'check-ignore', '--quiet', '--', 'build/bin/README.md'],
+                                 cwd=REPOSITORY)
+        self.assertEqual(ignored.returncode, 0, 'The complete build/ tree must be ignored')
+        tracked = subprocess.run(['git', 'ls-files', '--', 'build'], cwd=REPOSITORY,
+                                 capture_output=True, check=True)
+        self.assertEqual(tracked.stdout, b'', 'Build artifacts must not be tracked')
 
     def test_four_runtime_templates(self):
         self.assertEqual({p.name for p in (REPOSITORY/'templates').iterdir()}, {

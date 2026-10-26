@@ -16,10 +16,14 @@ host = Path(os.environ['WINDIR']) / 'System32/cscript.exe'
 folder = work_path('launcher_contract')
 folder.mkdir(parents=True, exist_ok=True)
 model = base.parent / 'model/RoofFrontLeftFrontArch.SLDPRT'
+macro = folder / 'fixture.swp'
+macro.write_bytes(b'Unused macro fixture; the lock prevents CAD startup')
 results = []
 
 
 def case(name, args, expected_code, expected_text, environment=None):
+    if not any(str(arg).lower().startswith('/macro:') for arg in args):
+        args = [*args, '/macro:' + str(macro)]
     run = subprocess.run([str(host), '//nologo', str(script), *map(str, args)],
                          capture_output=True, timeout=15, env=environment)
     output = run.stdout + run.stderr
@@ -58,6 +62,8 @@ try:
         assert lock.read_text('utf-16') == 'launcher-contract-test'
     case('background accepts parameters before lock', [model, ini, '/background'],
          1, 'Another launcher is running')
+    case('runtime does not require Python', [model, ini], 1, 'Another launcher is running',
+         dict(os.environ, SW_DRAWING_PYTHON=str(folder/'missing-python.exe')))
     case('existing output accepted before lock', [model, ini, folder/'not-empty'],
          1, 'Another launcher is running')
     state = folder/'not-empty/generation-state.tsv'
@@ -92,7 +98,12 @@ finally:
         lock.unlink()
 
 environment=dict(os.environ,SW_DRAWING_PYTHON=str(folder/'missing-python.exe'))
-case('failed source build preserves reset checkpoint', [model,'/out:'+str(folder/'not-empty'),'/reset'],1,'Python 3 is required',environment)
+case('missing runtime macro preserves reset checkpoint',
+     [model, '/macro:'+str(folder/'missing.swp'), '/out:'+str(folder/'not-empty'), '/reset'],
+     1, 'Packaged macro not found', environment)
+case('empty macro', [model, '/macro:'], 1, 'A compiled VBA file is required')
+case('wrong macro extension', [model, '/macro:'+str(base/'generator.bas')],
+     1, 'Macro must be a compiled .swp file')
 assert state.read_text('utf-16')=='checkpoint sentinel'
 assert (folder/'not-empty/keep.txt').read_text('utf8')=='existing user data'
 (folder/'results.json').write_text(json.dumps(results, indent=2), encoding='utf8')
