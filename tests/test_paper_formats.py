@@ -88,15 +88,19 @@ else:
             # Check labels created by VBA, independently of the embedded template.
             # This detects project-code-page mistakes that corrupt Cyrillic at runtime.
             vba=(base/'generator.bas').read_text('utf8')
-            marker=re.search(r'AddText d, "([^"\n]+)", DRAFT_MARKER_X_M, sheetHeight - DRAFT_MARKER_TOP_MARGIN_M',vba)[1]
             compact=lambda value: re.sub(r'\s+','',value)
-            assert compact(marker) in compact(pdf.pages[0].extract_text()),'Cyrillic review label was corrupted'
+            removed_marker='\u0410\u0412\u0422\u041e\u041c\u0410\u0422\u0418\u0427\u041d\u0418\u0419 \u041f\u0420\u041e\u0404\u041a\u0422'
+            assert all(compact(removed_marker) not in compact(page.extract_text() or '') for page in pdf.pages),'Removed review label returned'
             font_size='TEXT_HEIGHT_STANDARD_M' if name=='assembly' else 'TEXT_HEIGHT_SMALL_M'
             detail=re.search(r'AddText d, "([^"\n]+)", CONTENT_LEFT_M, sheetHeight - SECTION_HEADER_TOP_MARGIN_M, '+font_size,vba)[1]
             assert compact(detail) in compact(pdf.pages[1].extract_text()),'Cyrillic detail-sheet label was corrupted'
     if name!='assembly':
         coverage=[line.split('\t') for line in (out/'dimension-coverage.tsv').read_text('utf-16').splitlines()[1:]]
-        assert max(int(row[4]) for row in coverage)>=60,'Flat dimension coverage regressed'
+        assert max(int(row[4]) for row in coverage)>=2,'Missing overall dimensions'
+        layout_log=(out/'run.log').read_text('utf-16')
+        assert 'COORDINATE TABLE' not in layout_log,'Graphical dimensions were replaced by a schedule'
+        routes=re.findall(r'ROUTING .+ intervals=(\d+) covered=(\d+)',layout_log)
+        assert routes and all(int(expected)==int(covered) for expected,covered in routes),'Missing graphical dimension intervals'
     if name=='resume':
         assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest()==h for p,h in native_before.items()),'Completed artifacts changed during resume'
 result={'test':name,'passed':True,'seconds':round(time.monotonic()-started,1),'exit_code':code,'output':str(out),

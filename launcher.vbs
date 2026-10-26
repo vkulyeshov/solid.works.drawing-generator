@@ -35,7 +35,9 @@ Const PROGRESS_FAILED_FIELD = 5
 Const PROGRESS_WARNINGS_FIELD = 6
 Const PROGRESS_OUTPUT_FIELD = 7
 Const PROGRESS_MESSAGE_FIELD = 8
-Const CHECKPOINT_JOB_LAST_FIELD = 14
+Const CHECKPOINT_JOB_LAST_FIELD = 15
+Const LEGACY_CHECKPOINT_JOB_LAST_FIELD = 14
+Const CHECKPOINT_ATTEMPTS_FIELD = 15
 Const CHECKPOINT_STATUS_FIELD = 10
 Const CHECKPOINT_STEM_FIELD = 11
 Const CHECKPOINT_DRAWING_BYTES_FIELD = 13
@@ -76,6 +78,7 @@ Const CHARSET_BYTE_INSPECTION = "iso-8859-1"
 
 ' Progress and checkpoint wire values
 Const STATE_STARTING = "STARTING"
+Const STATE_RUNNING = "RUNNING"
 Const STATE_DONE = "DONE"
 Const STATE_FAILED = "FAILED"
 Const STATE_COMPLETE = "COMPLETE"
@@ -300,12 +303,13 @@ Sub ControllerMain()
     Say "Diagnostics: " & sessionDir
     command = Q(ConsoleHost()) & " //nologo " & Q(WScript.ScriptFullName) & " " & Q("/worker:" & sessionDir)
     currentStage = "worker and progress monitor"
-    Dim beforeDone, afterDone, retries, batchNumber
+    Dim beforeDone, afterDone, beforeAttempts, afterAttempts, retries, batchNumber
     retries = 0: batchNumber = 0
     Do
         beforeDone = CheckpointDone(outputDir)
+        beforeAttempts = CheckpointAttempts(outputDir)
         batchNumber = batchNumber + 1
-        Say "Batch " & batchNumber & "; checkpoint completed=" & beforeDone
+        Say "Batch " & batchNumber & "; checkpoint completed=" & beforeDone & "; attempts=" & beforeAttempts
         WriteText progressFile, "": recordsSeen = 0: lastState = STATE_STARTING
         If fso.FileExists(fso.BuildPath(sessionDir, WORKER_RESULT_FILENAME)) Then
             fso.DeleteFile fso.BuildPath(sessionDir, WORKER_RESULT_FILENAME), True
@@ -352,14 +356,17 @@ Sub ControllerMain()
             exitCode = EXIT_GENERATION_FAILURE
         End If
         afterDone = CheckpointDone(outputDir)
+        afterAttempts = CheckpointAttempts(outputDir)
         ArchiveDiagnostics
         If exitCode = EXIT_BATCH_PAUSED Then
-            If afterDone <= beforeDone Then
-                exitCode = EXIT_GENERATION_FAILURE: Say "ERROR: batch made no checkpoint progress.": Exit Do
+            If afterDone <= beforeDone And afterAttempts <= beforeAttempts Then
+                exitCode = EXIT_GENERATION_FAILURE
+                Say "ERROR: batch made no checkpoint progress."
+                Exit Do
             End If
             retries = 0
         ElseIf exitCode = EXIT_LAUNCHER_FAILURE And fso.FileExists(fso.BuildPath(outputDir, CHECKPOINT_FILENAME)) Then
-            If afterDone > beforeDone Then
+            If afterDone > beforeDone Or afterAttempts > beforeAttempts Then
                 retries = 0
             End If
             retries = retries + 1
@@ -732,7 +739,7 @@ Sub WorkerProgress(ByVal message)
     Dim stream, done, total
     done = 0: total = 0
     If Len(outputDir) > 0 Then
-        done = CheckpointDone(outputDir): total = CheckpointTotal(outputDir)
+        done = CheckpointHandled(outputDir): total = CheckpointTotal(outputDir)
     End If
     Set stream = fso.OpenTextFile(progressFile, FILE_FOR_APPENDING, True, FILE_UNICODE)
     stream.WriteLine Time & vbTab & STATE_STARTING & vbTab & done & vbTab & total & vbTab & done & vbTab & "0" & vbTab & "0" & vbTab & outputDir & vbTab & message
@@ -971,6 +978,8 @@ Sub Usage()
     WScript.Echo "Prebuilt runtime kits run generator.swp without Python."
     WScript.Echo "Existing output resumes generation-state.tsv. Delete that file, or add /reset, to regenerate all jobs."
     WScript.Echo "JobsPerBatch in INI limits one batch (default 8). Background batches restart SolidWorks automatically."
+    WScript.Echo "Failed jobs do not stop later batches. MaxJobAttempts in INI limits persistent attempts per job (default 3)."
+    WScript.Echo "Permanent failures are listed in failed-jobs.tsv; a finished queue with failures exits with code 2."
     WScript.Echo "Exit code 0 means complete success; 1 launcher/crash; 2 model validation, macro or drawing failure."
 End Sub
 
@@ -997,7 +1006,7 @@ Function CheckpointDone(ByVal path)
     End If
     For Each line In Split(ReadUnicode(stateFile), vbCrLf)
         cells = Split(line, vbTab)
-        If UBound(cells) = CHECKPOINT_JOB_LAST_FIELD Then
+        If IsCheckpointJobRow(cells) Then
             If cells(0) = CHECKPOINT_JOB_TAG And cells(CHECKPOINT_STATUS_FIELD) = STATE_DONE Then
                 If CheckpointArtifactsValid(path, cells) Then
                     CheckpointDone = CheckpointDone + 1
@@ -1030,9 +1039,77 @@ Function CheckpointTotal(ByVal path)
     End If
     For Each line In Split(ReadUnicode(stateFile), vbCrLf)
         cells = Split(line, vbTab)
-        If UBound(cells) = CHECKPOINT_JOB_LAST_FIELD Then
+        If IsCheckpointJobRow(cells) Then
             If cells(0) = CHECKPOINT_JOB_TAG Then
                 CheckpointTotal = CheckpointTotal + 1
+            End If
+        End If
+    Next
+End Function
+
+Function IsCheckpointJobRow(ByVal cells)
+    Dim lastField
+    lastField = UBound(cells)
+    IsCheckpointJobRow = False
+    If lastField = CHECKPOINT_JOB_LAST_FIELD Or lastField = LEGACY_CHECKPOINT_JOB_LAST_FIELD Then
+        IsCheckpointJobRow = (cells(0) = CHECKPOINT_JOB_TAG)
+    End If
+End Function
+
+Function CheckpointJobAttempts(ByVal cells)
+    CheckpointJobAttempts = 0
+    If UBound(cells) = CHECKPOINT_JOB_LAST_FIELD Then
+        If Not IsNumeric(cells(CHECKPOINT_ATTEMPTS_FIELD)) Then
+            Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "Invalid checkpoint attempt count."
+        End If
+        If CDbl(cells(CHECKPOINT_ATTEMPTS_FIELD)) < 0 Or CDbl(cells(CHECKPOINT_ATTEMPTS_FIELD)) <> Fix(CDbl(cells(CHECKPOINT_ATTEMPTS_FIELD))) Then
+            Err.Raise vbObjectError + ERR_PATH_OR_BUILD, , "Invalid checkpoint attempt count."
+        End If
+        CheckpointJobAttempts = CLng(cells(CHECKPOINT_ATTEMPTS_FIELD))
+    ElseIf cells(CHECKPOINT_STATUS_FIELD) = STATE_DONE Or cells(CHECKPOINT_STATUS_FIELD) = STATE_FAILED Or cells(CHECKPOINT_STATUS_FIELD) = STATE_RUNNING Then
+        CheckpointJobAttempts = 1
+    End If
+End Function
+
+Function CheckpointAttempts(ByVal path)
+    Dim stateFile, line, cells, valid
+    CheckpointAttempts = 0
+    stateFile = fso.BuildPath(path, CHECKPOINT_FILENAME)
+    If Not fso.FileExists(stateFile) Then
+        Exit Function
+    End If
+    For Each line In Split(ReadUnicode(stateFile), vbCrLf)
+        cells = Split(line, vbTab)
+        If IsCheckpointJobRow(cells) Then
+            valid = True
+            If cells(CHECKPOINT_STATUS_FIELD) = STATE_DONE Then
+                valid = CheckpointArtifactsValid(path, cells)
+            End If
+            If valid Then
+                CheckpointAttempts = CheckpointAttempts + CheckpointJobAttempts(cells)
+            End If
+        End If
+    Next
+End Function
+
+Function CheckpointHandled(ByVal path)
+    Dim stateFile, line, cells, handled
+    CheckpointHandled = 0
+    stateFile = fso.BuildPath(path, CHECKPOINT_FILENAME)
+    If Not fso.FileExists(stateFile) Then
+        Exit Function
+    End If
+    For Each line In Split(ReadUnicode(stateFile), vbCrLf)
+        cells = Split(line, vbTab)
+        If IsCheckpointJobRow(cells) Then
+            handled = (cells(CHECKPOINT_STATUS_FIELD) = STATE_FAILED)
+            If cells(CHECKPOINT_STATUS_FIELD) = STATE_DONE Then
+                handled = CheckpointArtifactsValid(path, cells)
+            ElseIf cells(CHECKPOINT_STATUS_FIELD) = STATE_RUNNING And CheckpointJobAttempts(cells) > 1 Then
+                handled = True
+            End If
+            If handled Then
+                CheckpointHandled = CheckpointHandled + 1
             End If
         End If
     Next

@@ -21,7 +21,7 @@ if not (pack/'generation-state.tsv').exists():
 host=Path(os.environ['WINDIR'])/'System32/cscript.exe'
 args=[str(host),'//nologo',str(base/'launcher.vbs'),
       '/input:'+str(fixture/'input/CarFenderGusset.SLDPRT'),
-      '/ini:'+str(fixture/'test.ini'),'/format:A4','/out:'+str(pack),'/background']
+      '/ini:'+str(fixture/'test.ini'),'/format:A4','/orientation:landscape','/out:'+str(pack),'/background']
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
 def artifacts():
     return {str(p.relative_to(pack)):{'sha256':sha(p),'mtime_ns':p.stat().st_mtime_ns}

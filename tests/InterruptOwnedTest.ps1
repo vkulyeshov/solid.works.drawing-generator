@@ -1,7 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$SessionDir)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'TestPaths.ps1')
-$expectedRoot=Join-Path $env:TEMP 'AirDuctLaunch_'
+$expectedRoot=Join-Path $env:TEMP 'GeneratorLaunch_'
 $resolvedSession=[IO.Path]::GetFullPath($SessionDir)
 if (-not $resolvedSession.StartsWith($expectedRoot,[StringComparison]::OrdinalIgnoreCase)) { throw 'Not a launcher test session' }
 $runtimeMacro=Join-Path $resolvedSession 'generator.swp'

@@ -77,6 +77,7 @@ AutoDimensions=1
 ImportModelDimensions=0
 UpAxis=+Y
 JobsPerBatch=8
+MaxJobAttempts=3
 MaxJobs=0
 JobFilter=
 Organization=
@@ -93,26 +94,37 @@ The macro creates a document from the selected template and retains its embedded
 
 Drawing properties `Designation`, `Description`, `Material`, and `Mass` populate the supplied title block. Existing localized model-property aliases remain supported. Ukrainian drawing labels remain unchanged; source code and documentation are English. Optional organization and approval fields can be supplied through INI. Native sheet properties provide scale, page number, and total page count.
 
-The generator groups repeated file/configuration pairs, creates separate drawings for visible solid bodies, adds supported sheet-metal flat patterns, and adds native assembly component tables. Dense flat dimensions and long notes may use additional formatted sheets. Drawings remain automatic drafts requiring engineering review of manufacturing dimensions, tolerances, datums, sections, bends, and release requirements.
+The generator groups repeated file/configuration pairs, creates separate drawings for visible solid bodies, adds supported sheet-metal flat patterns, and adds native assembly component tables. A flat pattern has its own dimensioned sheet, with all flat dimensions kept together on that sheet. Long technical notes may continue on additional formatted sheets. Drawings remain automatic drafts requiring engineering review of manufacturing dimensions, tolerances, datums, sections, bends, and release requirements.
+
+All independent dimension intervals remain native graphical dimensions on the dimensioned view. Dense contours do not switch to coordinate tables or lose dimensions through a numeric limit. Labels are packed into outside bands above, below, left, and right of the contour. Each band uses as many lanes as the available paper permits; a forward/backward packing pass keeps text inside its band without overlaps. Short dimensions use outside arrows. Native smart extension-line display limits witness-line clutter without changing measured values or model references. The flat view and all its dimensions stay on one detail sheet; the generator does not add enlarged views to spread this layout over more sheets. If the selected format cannot accommodate the complete layout, generation reports a layout error instead of silently omitting dimensions.
+
+Repeated equal pitches in short chains use one `count x pitch = total` dimension. Circular features with the same diameter and orientation use one diameter callout with the count of distinct projected centres; front/back edges at the same projected centre are counted once. Overall dimensions are deduplicated by their physical model direction and span across orthographic views, so equal numeric dimensions in different directions remain independent. Folded and flat overall sizes remain separate. Feature dimensions of sheet-metal parts are concentrated on the flat detail sheet when available. Repeated assembly instances of the same file/configuration continue to share one drawing and a quantity; geometrically different bodies are not merged merely because a dimension matches. The automatic-review banner is no longer inserted.
+
+This graphical layout changes rendering compatibility. Generate a new output pack, or explicitly use `/reset` to regenerate an existing pack; a checkpoint made with an earlier dimension layout cannot be resumed with these rendering settings. The former `MaxCoordinateDimensionsPerAxis` setting is no longer used.
 
 ## Output and recovery
 
 Use an output directory outside this repository. Each pack includes:
 
 - `Models/`: the Pack and Go snapshot used for generation.
-- `SourceBackup/` and `source-backup.tsv`: exact source-file backups made before Pack and Go.
+- `SourceBackup/` and `source-backup.tsv`: temporary exact source-file backups made before Pack and Go. After all expected files exist in `Models/`, are nonempty, and source restoration has completed successfully, the current snapshot's backup and its index are removed before drawing generation. The empty backup root is also removed. Backups from other failed runs are retained. Snapshot or restoration failures retain the backup; cleanup failures are logged as warnings and do not stop drawing generation.
 - `Drawings/` and `PDF/`: editable drawings and exported PDFs.
 - `generation-state.tsv`: the durable job queue and checkpoint.
+- `failed-jobs.tsv`: remaining failed jobs, their attempt counts, retry eligibility, and last errors.
 - `manifest.tsv` and `dimension-coverage.tsv`: job and dimension diagnostics.
 - `run.log`, `launcher.log`, `progress.tsv`, and worker/settings diagnostics.
 - `generator.build.json` for source launches: checksums of the BAS and generated project.
 - `drawing-format.slddrt`: the selected template's embedded sheet format.
 
-Repeat the same command with the same `/out` to resume. Completed drawings are skipped when both artifacts match the checkpoint. An interrupted job restarts from its beginning. Missing artifacts are regenerated.
+The launcher automatically continues between batches, after individual drawing errors, and after an interrupted native process. Completed drawings are skipped when both artifacts match the checkpoint. An interrupted job restarts from its beginning. Missing artifacts are regenerated. Repeat the same command with the same `/out` only if the launcher itself was closed or Windows restarted.
 
-Use a new output directory when changing format, template, rendering settings, or checkpoint version. `/reset` removes only the checkpoint; matching output filenames can then be overwritten during regeneration. Old unrelated files are not removed.
+Existing version 2 checkpoints migrate automatically to version 3 without regenerating valid completed artifacts. The new version stores each job's attempt count. Legacy completed, failed, and interrupted jobs start with one recorded attempt; pending jobs start with zero. Use a new output directory when changing format, template, or rendering settings. `/reset` removes only the checkpoint; matching output filenames can then be overwritten during regeneration. Old unrelated files are not removed.
 
-`JobsPerBatch=8` bounds new jobs per batch; `0` disables the limit. Background mode restarts SolidWorks between batches and retries interrupted processes up to twice without progress. Dirty source documents are rejected for a new queue. Resume uses the saved snapshot without saving or discarding a user's unsaved changes.
+`JobsPerBatch=8` bounds job attempts per batch; `0` disables the limit. `MaxFailures` optionally ends a batch after that many failures, then the launcher continues with another batch. Background mode restarts SolidWorks between batches. A batch with failed jobs still advances the queue, including a batch with no successful drawings.
+
+`MaxJobAttempts=3` permits three total attempts per job across launcher restarts. Attempts are committed before rendering so a native crash also consumes an attempt. Pending jobs run before deferred failed-job retries; an interrupted job is retried immediately while its budget remains. After exhausting its budget, a job is skipped and recorded in `failed-jobs.tsv`; other jobs continue. To retry exhausted jobs after fixing their cause, increase `MaxJobAttempts` and run the same command without `/reset`. Valid completed drawings remain untouched. Startup crashes that occur before a job attempt are retried up to twice without progress; validation errors stop immediately.
+
+Dirty source documents are rejected for a new queue. Resume uses the saved snapshot without saving or discarding a user's unsaved changes. Final exit code `2` indicates that some jobs still failed after all eligible work was attempted; it does not abandon later pending jobs.
 
 `/background` runs desktop SolidWorks in a separate process with its graphics window offscreen. It still requires a licensed interactive Windows session and graphics context. The launcher closes only its own process. Without this flag, it can use an existing SolidWorks instance and leaves it open.
 
@@ -150,16 +162,22 @@ Build intermediates and test data default to `../tmp/solid.works.drawing-generat
 python -B tools/rebuild_native.py
 python -B tests/test_repository.py
 python -B tests/test_launcher_contract.py
+python -B tests/test_controller_recovery.py
+python -B tests/test_snapshot_cleanup.py
 python -B tests/test_paper_formats.py --case A4.landscape
 ```
 
 The build writes `generator.swp` and its checksum report into the external working directory, normally `../tmp/solid.works.drawing-generator/build/`. Use `--source FILE.bas --output FILE.swp` for an explicit external destination. No existing SWP file is needed: `tools/vba_project.py` supplies only empty SolidWorks host metadata and library references, with a zero-byte executable module; all generator code comes from BAS. SolidWorks compiles the resulting VBA project on first load.
 
-The repository tests check source/native consistency, source freshness, empty-project metadata, output-path guards, syntax, and repository hygiene. The 32 WSH contract checks validate arguments, encodings, templates, locking, and checkpoint preservation after a build failure without starting CAD. PDF integration checks require `pdfplumber`; template verification also uses `pypdf`, `pypdfium2`, and Pillow.
+The repository tests check source/native consistency, source freshness, empty-project metadata, output-path guards, syntax, and repository hygiene. The 32 WSH contract checks validate arguments, encodings, templates, locking, and checkpoint preservation after a build failure without starting CAD. The snapshot cleanup test runs the generator's filesystem routine in disposable external folders, checking successful deletion, preservation of older backups, and rejection of paths outside the backup root. Its WSH harness adapts VBA's labelled exception handler; it does not start CAD. PDF integration checks require `pdfplumber`; template verification also uses `pypdf`, `pypdfium2`, and Pillow.
 
 Native format cases are `A4.landscape`, `A4.portrait`, `A3.landscape`, `A3.portrait`, `assembly`, `resume`, and `mismatch`. Run `A4.landscape` before `resume`. Test models are copied from the sibling `../model` directory into the external working directory. Integration tests require installed SolidWorks and may take several minutes.
 
-After generating all five drawing cases, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/InspectPaperResults.ps1` to inspect native sheet notes, scale, and numbering. The optional `test_incremental_integration.py` injects a crash only into its own copied A4 fixture and checks recovery and completed artifact preservation.
+`test_compact_dimensions.py --before ORIGINAL_PACK --after UPDATED_PACK` checks a native LeftSide comparison: folded-view overall deduplication, preservation of the full graphical flat dimension set on one sheet, interval coverage for both axes, removal of coordinate-table sheets and the banner, text overlap, and page boundaries. Both pack paths must refer to external generated output. Optional `--pattern-pack FOUR_HOLE_PACK` also checks a native four-hole plate: one diameter quantity, one equal-pitch label, and reuse of overall dimensions without duplicate total spans.
+
+After generating all five drawing cases, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/InspectPaperResults.ps1` to inspect native sheet notes, scale, and numbering. The optional `test_incremental_integration.py` injects a crash only into its own copied A4 fixture and checks recovery and completed artifact preservation. `test_controller_recovery.py` replaces only the worker in an external launcher copy to test immediate validation failure, bounded startup retries, and retry continuation when persistent attempt counts advance. Run it when no other launcher holds the shared lock.
+
+After the native crash test, `python -B tests/test_failed_job_recovery.py` extends that disposable A4 landscape queue with a missing body followed by a valid body. It verifies version 2 migration, continuation after a wholly failed batch, deferred bounded retries, the final failure report, and preservation of the previously completed drawing. Run these native tests in the same external `SW_DRAWING_WORK_DIR`; they never use production output.
 
 Create a distributable kit outside Git:
 

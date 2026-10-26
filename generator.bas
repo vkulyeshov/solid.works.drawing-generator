@@ -57,6 +57,7 @@ Private Const SW_LENGTH_MILLIMETRES As Long = 0
 Private Const SW_PREF_INPUT_DIMENSION As Long = 10
 Private Const SW_TEXT_FORMAT_NOTE As Long = 0
 Private Const SW_TEXT_FORMAT_DIMENSION As Long = 1
+Private Const SW_DIMENSION_TEXT_PREFIX As Long = 1
 Private Const SW_BOM_TOP_LEVEL_ONLY As Long = 2
 Private Const SW_BOM_ANCHOR_TOP_LEFT As Long = 1
 Private Const SW_ARC_CENTER As Long = 1
@@ -114,9 +115,14 @@ Private Const STATE_COMPLETE As String = "COMPLETE"
 Private Const STATE_PAUSED As String = "PAUSED"
 Private Const CHECKPOINT_HEADER_TAG As String = "STATE"
 Private Const CHECKPOINT_JOB_TAG As String = "JOB"
-Private Const CHECKPOINT_VERSION As String = "2"
+Private Const CHECKPOINT_VERSION As String = "3"
+Private Const LEGACY_CHECKPOINT_VERSION As String = "2"
 Private Const CHECKPOINT_HEADER_LAST_FIELD As Long = 7
-Private Const CHECKPOINT_JOB_LAST_FIELD As Long = 14
+Private Const CHECKPOINT_JOB_LAST_FIELD As Long = 15
+Private Const LEGACY_CHECKPOINT_JOB_LAST_FIELD As Long = 14
+Private Const CHECKPOINT_ATTEMPTS_FIELD As Long = 15
+Private Const DEFAULT_MAX_JOB_ATTEMPTS_TEXT As String = "3"
+Private Const FAILED_JOBS_RELATIVE_PATH As String = "\failed-jobs.tsv"
 Private Const HEADER_SOURCE_PATH As Long = 2
 Private Const HEADER_SOURCE_STAMP As Long = 3
 Private Const HEADER_SNAPSHOT_PATH As Long = 4
@@ -179,19 +185,16 @@ Private Const BOTTOM_BOX_HEIGHT_M As Double = 0.05
 Private Const SIDE_BOX_WIDTH_M As Double = 0.11
 Private Const ISOMETRIC_BOX_HEIGHT_M As Double = 0.06
 Private Const INITIAL_FLAT_VIEW_SCALE As Double = 0.1
-Private Const DRAFT_MARKER_TOP_MARGIN_M As Double = 0.012
-Private Const DRAFT_MARKER_TEXT_HEIGHT_M As Double = 0.002
 Private Const FLAT_NOTICE_Y_M As Double = 0.065
 Private Const AUXILIARY_CAPTION_X_M As Double = 0.28
 Private Const AUXILIARY_CAPTION_Y_M As Double = 0.077
 Private Const MAIN_BOX_WIDTH_M As Double = 0.21
 Private Const AUXILIARY_BOX_WIDTH_M As Double = 0.115
-Private Const DRAFT_MARKER_X_M As Double = 0.1
 Private Const DETAIL_INITIAL_X_M As Double = 0.225
 Private Const DETAIL_INITIAL_Y_M As Double = 0.17
-Private Const DETAIL_HORIZONTAL_RESERVED_M As Double = 0.105
-Private Const DETAIL_VERTICAL_RESERVED_M As Double = 0.175
-Private Const DETAIL_CENTER_X_BIAS_M As Double = 0.035
+Private Const DETAIL_HORIZONTAL_RESERVED_M As Double = 0.07
+Private Const DETAIL_VERTICAL_RESERVED_M As Double = 0.145
+Private Const DETAIL_CENTER_X_BIAS_M As Double = 0.015
 Private Const DETAIL_CENTER_Y_BASE_M As Double = 0.095
 Private Const DETAIL_CENTER_HEIGHT_REFERENCE_M As Double = 0.21
 
@@ -239,7 +242,7 @@ Private Const BOM_SPLIT_COLUMN_COUNT As Long = 4
 Private Const BOM_FIXED_COLUMN_COUNT As Long = 2
 
 ' Dimension label layout (metres)
-Private Const DIAMETER_LABEL_OFFSET_M As Double = 0.012
+Private Const DIAMETER_LABEL_OFFSET_M As Double = 0.008
 Private Const DIAMETER_LABEL_PITCH_M As Double = 0.014
 Private Const OVERALL_LABEL_OFFSET_M As Double = 0.009
 Private Const DETAIL_OVERALL_LABEL_OFFSET_M As Double = 0.012
@@ -247,19 +250,31 @@ Private Const RADIUS_LABEL_OFFSET_M As Double = 0.008
 Private Const RADIUS_LABEL_PITCH_M As Double = 0.009
 
 ' Coordinate dimension layout
-Private Const COORDINATE_LAST_LANE As Long = 50
-Private Const COORDINATE_BASE_OFFSET_M As Double = 0.016
+Private Const COORDINATE_LAST_LANE As Long = 16
+Private Const COORDINATE_BASE_OFFSET_M As Double = 0.008
 Private Const COORDINATE_TOP_MARGIN_M As Double = 0.04
-Private Const COORDINATE_LEFT_LIMIT_M As Double = 0.032
-Private Const COORDINATE_LANE_PITCH_M As Double = 0.007
+Private Const COORDINATE_LEFT_LIMIT_M As Double = 0.026
+Private Const COORDINATE_LANE_PITCH_M As Double = 0.006
 Private Const EMPTY_LANE_LIMIT As Double = 1E+20
-Private Const COORDINATE_GLYPH_WIDTH_M As Double = 0.0018
-Private Const COORDINATE_LABEL_PADDING_M As Double = 0.004
+Private Const COORDINATE_GLYPH_WIDTH_M As Double = 0.00165
+Private Const COORDINATE_LABEL_PADDING_M As Double = 0.003
 Private Const COORDINATE_RIGHT_MARGIN_M As Double = 0.015
 Private Const COORDINATE_LABEL_GAP_M As Double = 0.002
 Private Const COORDINATE_LANE_PENALTY_M As Double = 0.0001
 Private Const COORDINATE_MIN_KEY_COUNT As Long = 3
 Private Const COORDINATE_KEY_DECIMALS As Long = 5
+Private Const COORDINATE_BOTTOM_LIMIT_M As Double = 0.082
+Private Const COORDINATE_AXIS_TOP_MARGIN_M As Double = 0.045
+Private Const COORDINATE_AXIS_RIGHT_MARGIN_M As Double = 0.012
+Private Const COORDINATE_SIDE_BALANCE_M As Double = 0.00015
+Private Const DIMENSION_ARROW_CLEARANCE_M As Double = 0.006
+Private Const ROUTED_WITNESS_MAX_LENGTH_M As Double = 0.006
+Private Const OVERALL_FOOTER_CLEARANCE_M As Double = 0.01
+Private Const OVERALL_RIGHT_MARGIN_M As Double = 0.007
+Private Const SW_DIMENSION_ARROWS_INSIDE As Long = 0
+Private Const SW_DIMENSION_ARROWS_OUTSIDE As Long = 1
+Private Const DIRECTION_KEY_DECIMALS As Long = 4
+Private Const DIRECTION_ZERO_TOLERANCE As Double = 0.000001
 
 ' Supported drawing scale factors
 Private Const SCALE_10_TO_1 As Double = 10#
@@ -383,7 +398,7 @@ Private Const OUTPUT_FOLDER_RELATIVE_PREFIX As String = "\DrawingPack_"
 Private Const SOURCE_BACKUP_RELATIVE_DIRECTORY As String = "\SourceBackup\"
 Private Const NAMED_VIEW_PREFIX As String = "AD_VIEW_"
 Private Const NAMED_FLAT_VIEW_PREFIX As String = "AD_FLAT_"
-Private Const RENDER_SIGNATURE_PREFIX As String = "20261025-v3-templates|PaperFormat="
+Private Const RENDER_SIGNATURE_PREFIX As String = "20261026-v5-graphical|PaperFormat="
 
 ' API array field indices
 Private Const SHEET_WIDTH_PROPERTY As Long = 5
@@ -421,7 +436,10 @@ Private Declare Function MoveFileExW Lib "kernel32" (ByVal existingName As Long,
 #End If
 Private checkpointPath As String, snapshotPath As String, sourcePath As String, sourceStamp As String, snapshotConfig As String
 Private attempts As Long, resumeRun As Boolean, renderSignature As String
+Private maxJobAttempts As Long, batchFailures As Long, interruptedJobNumber As Long
 Private sw As SldWorks.SldWorks, fs As Object, logFile As Object, manifest As Object
+Private dimensionKeys As Object
+Private routingXMinimum As Double, routingXMaximum As Double
 Private jobs As Object, quantities As Object, settings As Object
 Private runDir As String, sourceDir As String, prefix As String, templatePath As String
 Private paperFormat As String, paperOrientation As String, runtimeFormatPath As String
@@ -596,7 +614,17 @@ Private Function MakeSnapshot(ByVal doc As SldWorks.ModelDoc2) As String
     If Not fs.FileExists(MakeSnapshot) Then
         Err.Raise vbObjectError + ERR_SNAPSHOT_MISSING, , "Snapshot assembly is absent."
     End If
+    For fileIndex = LBound(destinationNames) To UBound(destinationNames)
+        If Not fs.FileExists(destinationNames(fileIndex)) Then
+            Err.Raise vbObjectError + ERR_SNAPSHOT_MISSING, , "Snapshot file is absent: " & destinationNames(fileIndex)
+        End If
+        If fs.GetFile(destinationNames(fileIndex)).Size = 0 Then
+            Err.Raise vbObjectError + ERR_SNAPSHOT_MISSING, , "Snapshot file is empty: " & destinationNames(fileIndex)
+        End If
+    Next fileIndex
     Log "SNAPSHOT " & MakeSnapshot
+    backupComplete = False
+    CleanupSnapshotBackup
     Exit Function
 SnapshotFailed:
     savedError = Err.Number: savedText = Err.Description
@@ -619,6 +647,35 @@ Private Sub RestoreSnapshotSources(ByVal names As Variant)
             fs.CopyFile exactBackup, CStr(n), True
         End If
     Next n
+End Sub
+
+Private Sub CleanupSnapshotBackup()
+    Dim backupRoot As String, backupFolder As String, indexPath As String, errorText As String
+    On Error GoTo CleanupFailed
+    backupRoot = fs.GetAbsolutePathName(runDir & SOURCE_BACKUP_RELATIVE_DIRECTORY)
+    backupFolder = fs.GetAbsolutePathName(fs.BuildPath(backupRoot, prefix))
+    If Len(prefix) = 0 Or StrComp(fs.GetParentFolderName(backupFolder), backupRoot, vbTextCompare) <> 0 Then
+        Err.Raise vbObjectError + ERR_GENERATION_DATA, , "Invalid snapshot backup cleanup path."
+    End If
+    ' Remove only this snapshot's backup; retain backups from other failed runs.
+    If fs.FolderExists(backupFolder) Then
+        fs.DeleteFolder backupFolder, True
+    End If
+    indexPath = runDir & SOURCE_BACKUP_INDEX_RELATIVE_PATH
+    If fs.FileExists(indexPath) Then
+        fs.DeleteFile indexPath, True
+    End If
+    If fs.FolderExists(backupRoot) Then
+        If fs.GetFolder(backupRoot).SubFolders.Count = 0 And fs.GetFolder(backupRoot).Files.Count = 0 Then
+            fs.DeleteFolder backupRoot, True
+        End If
+    End If
+    Log "SOURCE temporary backup removed after snapshot validation and source restoration"
+    Exit Sub
+CleanupFailed:
+    errorText = Err.Description
+    On Error Resume Next
+    Warn "Source backup cleanup incomplete; generation will continue: " & errorText
 End Sub
 
 Private Sub Inventory(ByVal asm As SldWorks.ModelDoc2)
@@ -743,6 +800,7 @@ Private Sub ProcessJob(ByVal j As Object)
     Dim mark As String, bodyName As String, mass As String, isAssembly As Boolean, multi As Boolean, active As Object
     Dim firstSheetName As String
     On Error GoTo Failed
+    Set dimensionKeys = CreateObject("Scripting.Dictionary")
     outName = CStr(j("out"))
     Log "JOB " & outName
     Dim previousDrawing As SldWorks.ModelDoc2
@@ -924,7 +982,7 @@ Private Sub ProcessJob(ByVal j As Object)
         rc = OverallDimensions(d, sideView)
     End If
     If Not isAssembly Then
-        ' Feature dimensions on every orthographic view, including sheet-metal parts.
+        ' Keep graphical feature dimensions; suppress only matching model-coordinate intervals.
         If Not CBool(j("sheet")) Then
             DimensionFeatures d, mainView, False
             If Not bottomView Is Nothing Then
@@ -933,7 +991,7 @@ Private Sub ProcessJob(ByVal j As Object)
             If Not sideView Is Nothing Then
                 DimensionFeatures d, sideView, False
             End If
-        Else
+        ElseIf flatView Is Nothing Then
             rc = DiameterDimensions(d, mainView): rc = RadiusDimensions(d, mainView)
             If Not bottomView Is Nothing Then
                 rc = DiameterDimensions(d, bottomView)
@@ -947,7 +1005,6 @@ Private Sub ProcessJob(ByVal j As Object)
     Log "VIEW after dimensions scale=" & mainView.ScaleDecimal & " position=" & box(0)
     AsDrawing(d).ActivateView "": d.ClearSelection2 True
     RefreshTemplateFields d
-    AddText d, "АВТОМАТИЧНИЙ ПРОЄКТ - ПЕРЕВІРИТИ ПЕРЕД ВИПУСКОМ", DRAFT_MARKER_X_M, sheetHeight - DRAFT_MARKER_TOP_MARGIN_M, DRAFT_MARKER_TEXT_HEIGHT_M, 0
     If Not flatView Is Nothing Then
         AddText d, "Розміри розгортки - на окремому аркуші.", CONTENT_LEFT_M, FLAT_NOTICE_Y_M, TEXT_HEIGHT_SMALL_M, 0
     End If
@@ -973,6 +1030,7 @@ Private Sub ProcessJob(ByVal j As Object)
         Err.Raise vbObjectError + ERR_SAVE_DRAWING, , "Drawing save failed: " & er
     End If
     ' Reopen to refresh cached drawing display data before PDF export.
+    dimensionKeys.RemoveAll
     sw.CloseDoc d.GetTitle
     Set d = sw.OpenDoc6(runDir & DRAWINGS_RELATIVE_DIRECTORY & outName & DRAWING_EXTENSION, SW_DOC_DRAWING, SW_OPEN_SILENT, "", er, wr)
     If d Is Nothing Then
@@ -1022,18 +1080,20 @@ Private Sub ProcessJob(ByVal j As Object)
     j("status") = STATE_DONE: j("stage") = "Saved"
     j("drawingBytes") = CStr(fs.GetFile(runDir & DRAWINGS_RELATIVE_DIRECTORY & outName & DRAWING_EXTENSION).Size)
     j("pdfBytes") = CStr(fs.GetFile(runDir & PDF_RELATIVE_DIRECTORY & outName & PDF_EXTENSION).Size)
+    RecountJobResults
     SaveCheckpoint
-    completed = completed + 1
     Log "OK " & outName & " dims(main)=" & dims
+    dimensionKeys.RemoveAll
     sw.CloseDoc d.GetTitle
     Set currentDrawing = Nothing
     Exit Sub
 Failed:
     Dim msg As String
     msg = Err.Number & " " & Err.Description
-    failures = failures + 1
+    batchFailures = batchFailures + 1
     On Error Resume Next
     j("status") = STATE_FAILED: j("stage") = msg
+    RecountJobResults
     SaveCheckpoint
     Log "FAIL " & outName & " | " & msg
     AppendManifest jobNumber & vbTab & OriginalBase(CStr(j("path"))) & vbTab & cfg & vbTab & bodyName & vbTab & j("qty") & vbTab & outName & vbTab & "FAILED " & msg
@@ -1042,6 +1102,7 @@ Failed:
         doc.ShowConfiguration2 oldCfg
     End If
     If Not d Is Nothing Then
+        dimensionKeys.RemoveAll
         sw.CloseDoc d.GetTitle
     End If
     Set currentDrawing = Nothing
@@ -1149,7 +1210,7 @@ Private Sub InitializePaper(ByVal d As SldWorks.ModelDoc2, Optional ByVal saveFo
         If Not IsEmpty(annotations) Then
             noteCount = UBound(annotations) + 1
         End If
-        Log "TEMPLATE format=" & sheet.GetTemplateName & "; notes=" & noteCount
+        Log "TEMPLATE path=" & templatePath & "; notes=" & noteCount
         formatResult = sheet.SaveFormat(runtimeFormatPath)
         Log "TEMPLATE SaveFormat result=" & formatResult
         If formatResult = 0 Then
@@ -1591,6 +1652,7 @@ Private Function DiameterDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As Sl
     Dim curve As SldWorks.Curve, cp As Variant, start As SldWorks.Vertex, finish As SldWorks.Vertex
     Dim p As Variant, q As Variant, axis(2) As Double, vector As SldWorks.MathVector, util As SldWorks.MathUtility
     Dim seen As Object, key As String, radius As Double, outline As Variant, dd As SldWorks.DisplayDimension
+    Dim group As Object, centers As Object, groupName As Variant, center(2) As Double, point As SldWorks.MathPoint, centerKey As String
     On Error GoTo Failed
     Set seen = CreateObject("Scripting.Dictionary")
     Set util = sw.GetMathUtility
@@ -1622,25 +1684,52 @@ Private Function DiameterDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As Sl
                     If Abs(p(2)) < FACE_NORMAL_ALIGNMENT_COSINE * Sqr(p(0) ^ 2 + p(1) ^ 2 + p(2) ^ 2) Then
                         GoTo NextCircle
                     End If
-                    key = Format$(radius, GEOMETRY_KEY_FORMAT)
-                    If seen.Exists(key) Then
+                    key = "diameter|" & PhysicalAxisKey(v, 2) & "|" & Format$(radius, GEOMETRY_KEY_FORMAT)
+                    If dimensionKeys.Exists(key) Then
                         GoTo NextCircle
                     End If
-                    seen.Add key, True
-                    d.ClearSelection2 True: AsDrawing(d).ActivateView ""
-                    If v.SelectEntity(edge, False) Then
-                        Set dd = d.AddDiameterDimension2(outline(OUTLINE_RIGHT_INDEX) + DIAMETER_LABEL_OFFSET_M, outline(OUTLINE_TOP_INDEX) - DIAMETER_LABEL_PITCH_M * DiameterDimensions, 0)
-                        If Not dd Is Nothing Then
-                            If ValidateDimension(d, v, dd, 2 * radius * v.ScaleDecimal) Then
-                                DiameterDimensions = DiameterDimensions + 1
-                            End If
-                        End If
+                    If Not seen.Exists(key) Then
+                        Set group = CreateObject("Scripting.Dictionary")
+                        Set centers = CreateObject("Scripting.Dictionary")
+                        group.Add "edge", edge
+                        group.Add "radius", radius
+                        group.Add "centers", centers
+                        seen.Add key, group
+                    End If
+                    Set group = seen(key)
+                    Set centers = group("centers")
+                    center(0) = cp(CIRCLE_CENTER_X_INDEX): center(1) = cp(CIRCLE_CENTER_Y_INDEX): center(2) = cp(CIRCLE_CENTER_Z_INDEX)
+                    Set point = util.CreatePoint(center)
+                    Set point = point.MultiplyTransform(v.ModelToViewTransform)
+                    p = point.ArrayData
+                    centerKey = CStr(Round(p(0) / v.ScaleDecimal, COORDINATE_KEY_DECIMALS)) & "|" & CStr(Round(p(1) / v.ScaleDecimal, COORDINATE_KEY_DECIMALS))
+                    If Not centers.Exists(centerKey) Then
+                        centers.Add centerKey, True
                     End If
                 End If
 NextCircle:
             Next ei
         End If
     Next ci
+    For Each groupName In seen.Keys
+        Set group = seen(groupName)
+        Set centers = group("centers")
+        Set edge = group("edge")
+        radius = CDbl(group("radius"))
+        d.ClearSelection2 True: AsDrawing(d).ActivateView ""
+        If v.SelectEntity(edge, False) Then
+            Set dd = d.AddDiameterDimension2(outline(OUTLINE_RIGHT_INDEX) + DIAMETER_LABEL_OFFSET_M, outline(OUTLINE_TOP_INDEX) - DIAMETER_LABEL_PITCH_M * DiameterDimensions, 0)
+            If Not dd Is Nothing Then
+                If ValidateDimension(d, v, dd, 2 * radius * v.ScaleDecimal) Then
+                    If centers.Count > 1 Then
+                        dd.SetText SW_DIMENSION_TEXT_PREFIX, CStr(centers.Count) & "x " & dd.GetText(SW_DIMENSION_TEXT_PREFIX)
+                    End If
+                    dimensionKeys.Add CStr(groupName), True
+                    DiameterDimensions = DiameterDimensions + 1
+                End If
+            End If
+        End If
+    Next groupName
     d.ClearSelection2 True
     Exit Function
 Failed:
@@ -1655,7 +1744,7 @@ Private Function OverallDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As Sld
     Dim refDoc As SldWorks.ModelDoc2, realComp As SldWorks.Component2, modelComps As Object
     Dim ca As Variant, ci As Variant, compName As String, partDoc As SldWorks.ModelDoc2, sourceEntity As Object
     Dim xmin As Double, xmax As Double, ymin As Double, ymax As Double, outline As Variant, dimObj As Object
-    Dim horizontalY As Double, verticalX As Double
+    Dim horizontalY As Double, verticalX As Double, horizontalKey As String, verticalKey As String
     On Error GoTo Failed
     stage = "components"
     Set math = sw.GetMathUtility
@@ -1753,11 +1842,14 @@ NextVertex:
     horizontalY = outline(OUTLINE_TOP_INDEX) + OVERALL_LABEL_OFFSET_M: verticalX = outline(OUTLINE_LEFT_INDEX) - OVERALL_LABEL_OFFSET_M
     If lowerRight Then
         outline = ProjectedFlatBounds(v)
-        horizontalY = outline(OUTLINE_BOTTOM_INDEX) - DETAIL_OVERALL_LABEL_OFFSET_M: verticalX = outline(OUTLINE_RIGHT_INDEX) + DETAIL_OVERALL_LABEL_OFFSET_M
+        horizontalY = COORDINATE_BOTTOM_LIMIT_M - OVERALL_FOOTER_CLEARANCE_M
+        verticalX = sheetWidth - OVERALL_RIGHT_MARGIN_M
     End If
     stage = "select horizontal"
+    horizontalKey = "overall|" & CStr(lowerRight) & "|" & PhysicalAxisKey(v, 0) & "|" & Format$((xmax - xmin) / v.ScaleDecimal, GEOMETRY_KEY_FORMAT)
+    verticalKey = "overall|" & CStr(lowerRight) & "|" & PhysicalAxisKey(v, 1) & "|" & Format$((ymax - ymin) / v.ScaleDecimal, GEOMETRY_KEY_FORMAT)
     AsDrawing(d).ActivateView "": d.ClearSelection2 True
-    If Not leftV Is Nothing And xmax - xmin > MIN_DIMENSION_SPAN_M Then
+    If Not leftV Is Nothing And xmax - xmin > MIN_DIMENSION_SPAN_M And Not dimensionKeys.Exists(horizontalKey) Then
         If SelectInView(d, v, leftV, False) And SelectInView(d, v, rightV, True) Then
             stage = "add horizontal"
             Set dimObj = d.AddHorizontalDimension2((outline(OUTLINE_LEFT_INDEX) + outline(OUTLINE_RIGHT_INDEX)) / 2, horizontalY, 0)
@@ -1767,6 +1859,7 @@ NextVertex:
                 dimObj.SetPrecision3 LINEAR_DECIMAL_PLACES, LINEAR_DECIMAL_PLACES, LINEAR_DECIMAL_PLACES, LINEAR_DECIMAL_PLACES
                 stage = "validate horizontal"
                 If ValidateDimension(d, v, dimObj, xmax - xmin) Then
+                    dimensionKeys.Add horizontalKey, dimObj
                     OverallDimensions = OverallDimensions + 1
                 End If
             End If
@@ -1774,7 +1867,7 @@ NextVertex:
     End If
     d.ClearSelection2 True
     stage = "select vertical"
-    If Not bottomV Is Nothing And ymax - ymin > MIN_DIMENSION_SPAN_M Then
+    If Not bottomV Is Nothing And ymax - ymin > MIN_DIMENSION_SPAN_M And Not dimensionKeys.Exists(verticalKey) Then
         If SelectInView(d, v, bottomV, False) And SelectInView(d, v, topV, True) Then
             stage = "add vertical"
             Set dimObj = d.AddVerticalDimension2(verticalX, (outline(OUTLINE_BOTTOM_INDEX) + outline(OUTLINE_TOP_INDEX)) / 2, 0)
@@ -1784,6 +1877,7 @@ NextVertex:
                 dimObj.SetPrecision3 LINEAR_DECIMAL_PLACES, LINEAR_DECIMAL_PLACES, LINEAR_DECIMAL_PLACES, LINEAR_DECIMAL_PLACES
                 stage = "validate vertical"
                 If ValidateDimension(d, v, dimObj, ymax - ymin) Then
+                    dimensionKeys.Add verticalKey, dimObj
                     OverallDimensions = OverallDimensions + 1
                 End If
             End If
@@ -2315,6 +2409,7 @@ Private Sub SelectPlan()
             n = n + 1
             j.Add "number", n: j.Add "status", STATE_PENDING: j.Add "stage", "Queued"
             j.Add "drawingBytes", "0": j.Add "pdfBytes", "0"
+            j.Add "attempts", 0
             j.Add "out", Format$(n, JOB_NUMBER_FORMAT) & "_" & SafeFile(OriginalBase(CStr(j("path"))) & "_" & CStr(j("cfg")))
             If CBool(j("multi")) Then
                 j("out") = j("out") & "_" & SafeFile(CStr(j("cut")) & "_" & CStr(j("body")))
@@ -2341,7 +2436,7 @@ Private Sub SaveCheckpoint()
     stream.WriteLine CHECKPOINT_HEADER_TAG & vbTab & CHECKPOINT_VERSION & vbTab & sourcePath & vbTab & sourceStamp & vbTab & snapshotPath & vbTab & snapshotConfig & vbTab & prefix & vbTab & renderSignature
     For Each key In jobs.Keys
         Set j = jobs(key): line = CHECKPOINT_JOB_TAG
-        For Each field In Array("number", "path", "cfg", "body", "cut", "qty", "sheet", "multi", "type", "status", "out", "stage", "drawingBytes", "pdfBytes")
+        For Each field In Array("number", "path", "cfg", "body", "cut", "qty", "sheet", "multi", "type", "status", "out", "stage", "drawingBytes", "pdfBytes", "attempts")
             line = line & vbTab & Cell(j(CStr(field)))
         Next field
         stream.WriteLine line
@@ -2355,6 +2450,7 @@ End Sub
 
 Private Sub LoadCheckpoint()
     Dim stream As Object, fields As Variant, names As Variant, j As Object, i As Long
+    Dim legacy As Boolean, count As Double
     Set stream = fs.OpenTextFile(checkpointPath, FILE_FOR_READING, False, FILE_UNICODE)
     If stream.AtEndOfStream Then
         Err.Raise vbObjectError + ERR_CHECKPOINT_INVALID, , "Empty checkpoint. Use /reset to generate again."
@@ -2363,7 +2459,11 @@ Private Sub LoadCheckpoint()
     If UBound(fields) <> CHECKPOINT_HEADER_LAST_FIELD Then
         Err.Raise vbObjectError + ERR_CHECKPOINT_INVALID, , "Invalid checkpoint header."
     End If
-    If fields(HEADER_TAG_FIELD) <> CHECKPOINT_HEADER_TAG Or fields(HEADER_VERSION_FIELD) <> CHECKPOINT_VERSION Then
+    If fields(HEADER_TAG_FIELD) <> CHECKPOINT_HEADER_TAG Then
+        Err.Raise vbObjectError + ERR_CHECKPOINT_INVALID, , "Unsupported checkpoint version."
+    End If
+    legacy = (fields(HEADER_VERSION_FIELD) = LEGACY_CHECKPOINT_VERSION)
+    If Not legacy And fields(HEADER_VERSION_FIELD) <> CHECKPOINT_VERSION Then
         Err.Raise vbObjectError + ERR_CHECKPOINT_INVALID, , "Unsupported checkpoint version."
     End If
     If StrComp(fields(HEADER_SOURCE_PATH), sourcePath, vbTextCompare) <> 0 Then
@@ -2379,11 +2479,26 @@ Private Sub LoadCheckpoint()
     names = Array("number", "path", "cfg", "body", "cut", "qty", "sheet", "multi", "type", "status", "out", "stage", "drawingBytes", "pdfBytes")
     Do While Not stream.AtEndOfStream
         fields = Split(stream.ReadLine, vbTab)
-        If UBound(fields) <> CHECKPOINT_JOB_LAST_FIELD Then
+        If (legacy And UBound(fields) <> LEGACY_CHECKPOINT_JOB_LAST_FIELD) Or (Not legacy And UBound(fields) <> CHECKPOINT_JOB_LAST_FIELD) Then
             Err.Raise vbObjectError + ERR_CHECKPOINT_INVALID, , "Invalid checkpoint job."
         End If
         Set j = CreateObject("Scripting.Dictionary")
         For i = 0 To UBound(names): j.Add CStr(names(i)), fields(i + 1): Next i
+        count = 0
+        If legacy Then
+            If j("status") = STATE_DONE Or j("status") = STATE_FAILED Or j("status") = STATE_RUNNING Then
+                count = 1
+            End If
+        Else
+            If Not IsNumeric(fields(CHECKPOINT_ATTEMPTS_FIELD)) Then
+                Err.Raise vbObjectError + ERR_CHECKPOINT_INVALID, , "Invalid checkpoint attempt count."
+            End If
+            count = CDbl(fields(CHECKPOINT_ATTEMPTS_FIELD))
+            If count < 0 Or count <> Fix(count) Then
+                Err.Raise vbObjectError + ERR_CHECKPOINT_INVALID, , "Invalid checkpoint attempt count."
+            End If
+        End If
+        j.Add "attempts", CLng(count)
         j("sheet") = CBool(j("sheet")): j("multi") = CBool(j("multi"))
         j("path") = fs.GetAbsolutePathName(CStr(j("path")))
         If Not ValidArtifactStem(CStr(j("out"))) Then
@@ -2400,9 +2515,16 @@ Private Sub LoadCheckpoint()
                 completed = completed + 1
             Else
                 j("status") = STATE_PENDING: j("stage") = "Artifact missing or changed; regenerate"
+                j("attempts") = 0
             End If
-        Else
-            j("status") = STATE_PENDING
+        ElseIf j("status") = STATE_RUNNING Then
+            j("status") = STATE_FAILED
+            j("stage") = "Interrupted at: " & CStr(j("stage"))
+            If CLng(j("attempts")) < maxJobAttempts Then
+                interruptedJobNumber = CLng(j("number"))
+            End If
+        ElseIf j("status") <> STATE_PENDING And j("status") <> STATE_FAILED Then
+            Err.Raise vbObjectError + ERR_CHECKPOINT_INVALID, , "Invalid checkpoint job status."
         End If
         jobs.Add CStr(j("number")), j
     Loop
@@ -2410,6 +2532,82 @@ Private Sub LoadCheckpoint()
     If jobs.Count = 0 Then
         Err.Raise vbObjectError + ERR_CHECKPOINT_INVALID, , "Checkpoint has no jobs."
     End If
+    RecountJobResults
+End Sub
+
+Private Sub RecountJobResults()
+    Dim key As Variant, job As Object
+    completed = 0
+    failures = 0
+    For Each key In jobs.Keys
+        Set job = jobs(key)
+        If job("status") = STATE_DONE Then
+            completed = completed + 1
+        ElseIf job("status") = STATE_FAILED Then
+            failures = failures + 1
+        End If
+    Next key
+End Sub
+
+Private Function HasPendingJobs() As Boolean
+    Dim key As Variant, job As Object
+    For Each key In jobs.Keys
+        Set job = jobs(key)
+        If job("status") = STATE_PENDING And CLng(job("attempts")) < maxJobAttempts Then
+            HasPendingJobs = True
+            Exit Function
+        End If
+    Next key
+End Function
+
+Private Function HasRunnableJobs() As Boolean
+    Dim key As Variant, job As Object
+    For Each key In jobs.Keys
+        Set job = jobs(key)
+        If job("status") <> STATE_DONE And CLng(job("attempts")) < maxJobAttempts Then
+            HasRunnableJobs = True
+            Exit Function
+        End If
+    Next key
+End Function
+
+Private Function JobEligible(ByVal job As Object, ByVal retryBatch As Boolean) As Boolean
+    If job("status") = STATE_DONE Or CLng(job("attempts")) >= maxJobAttempts Then
+        Exit Function
+    End If
+    If interruptedJobNumber > 0 Then
+        JobEligible = (CLng(job("number")) = interruptedJobNumber)
+    ElseIf retryBatch Then
+        JobEligible = (job("status") = STATE_FAILED)
+    Else
+        JobEligible = (job("status") = STATE_PENDING)
+    End If
+End Function
+
+Private Sub WriteFailedJobs()
+    Dim stream As Object, key As Variant, job As Object, path As String, temp As String
+    On Error GoTo Failed
+    path = runDir & FAILED_JOBS_RELATIVE_PATH
+    temp = path & ATOMIC_TEMP_SUFFIX
+    Set stream = fs.CreateTextFile(temp, True, True)
+    stream.WriteLine "Number" & vbTab & "Model" & vbTab & "Configuration" & vbTab & "Body" & vbTab & "Attempts" & vbTab & "MaxAttempts" & vbTab & "Retryable" & vbTab & "Error"
+    For Each key In jobs.Keys
+        Set job = jobs(key)
+        If job("status") = STATE_FAILED Then
+            stream.WriteLine Cell(job("number")) & vbTab & Cell(job("path")) & vbTab & Cell(job("cfg")) & vbTab & Cell(job("body")) & vbTab & job("attempts") & vbTab & maxJobAttempts & vbTab & CStr(CLng(job("attempts")) < maxJobAttempts) & vbTab & Cell(job("stage"))
+        End If
+    Next key
+    stream.Close
+    If MoveFileExW(StrPtr(temp), StrPtr(path), ATOMIC_REPLACE_WRITE_THROUGH) = 0 Then
+        Err.Raise vbObjectError + ERR_GENERATION_DATA, , "Cannot commit failed-jobs.tsv"
+    End If
+    Exit Sub
+Failed:
+    On Error Resume Next
+    If Not stream Is Nothing Then
+        stream.Close
+    End If
+    Warn "Cannot update failed-jobs.tsv: " & Err.Description
 End Sub
 
 Private Function ArtifactsValid(ByVal j As Object) As Boolean
@@ -2480,12 +2678,55 @@ Failed:
     Warn "Import model dimensions: " & Err.Description
 End Sub
 
-Private Sub DimensionFeatures(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal detail As Boolean)
+Private Function PhysicalAxisKey(ByVal v As SldWorks.View, ByVal axis As Long) As String
+    Dim direction(2) As Double, util As SldWorks.MathUtility, vector As SldWorks.MathVector
+    Dim values As Variant, length As Double, i As Long, orientation As Double
+    direction(axis) = 1
+    Set util = sw.GetMathUtility
+    Set vector = util.CreateVector(direction)
+    Set vector = vector.MultiplyTransform(v.ModelToViewTransform.Inverse)
+    values = vector.ArrayData
+    length = Sqr(values(0) ^ 2 + values(1) ^ 2 + values(2) ^ 2)
+    orientation = 1
+    For i = 0 To UBound(direction)
+        If Abs(values(i) / length) > DIRECTION_ZERO_TOLERANCE Then
+            If values(i) < 0 Then
+                orientation = -1
+            End If
+            Exit For
+        End If
+    Next i
+    For i = 0 To UBound(direction)
+        PhysicalAxisKey = PhysicalAxisKey & "|" & CStr(Round(values(i) / length * orientation, DIRECTION_KEY_DECIMALS))
+    Next i
+End Function
+
+Private Function SortedCoordinateKeys(ByVal coordinates As Object) As Variant
+    Dim keys As Variant, i As Long, j As Long, temp As Variant
+    keys = coordinates.Keys
+    For i = LBound(keys) + 1 To UBound(keys)
+        temp = keys(i)
+        j = i - 1
+        Do While j >= LBound(keys)
+            If CDbl(keys(j)) <= CDbl(temp) Then
+                Exit Do
+            End If
+            keys(j + 1) = keys(j)
+            j = j - 1
+        Loop
+        keys(j + 1) = temp
+    Next i
+    SortedCoordinateKeys = keys
+End Function
+
+Private Sub DimensionFeatures(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal detail As Boolean, Optional ByVal includeCoordinates As Boolean = True)
     Dim count As Long
     If Setting("AutoDimensions", "1") <> "1" Then
         Exit Sub
     End If
-    count = CoordinateDimensions(d, v, detail)
+    If includeCoordinates Then
+        count = CoordinateDimensions(d, v, detail)
+    End If
     count = DiameterDimensions(d, v)
     count = RadiusDimensions(d, v)
 End Sub
@@ -2522,8 +2763,8 @@ Private Function RadiusDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As SldW
                     If Abs(p(2)) < FACE_NORMAL_ALIGNMENT_COSINE * Sqr(p(0) ^ 2 + p(1) ^ 2 + p(2) ^ 2) Then
                         GoTo NextArc
                     End If
-                    key = Format$(cp(CIRCLE_RADIUS_INDEX), GEOMETRY_KEY_FORMAT)
-                    If seen.Exists(key) Then
+                    key = "radius|" & PhysicalAxisKey(v, 2) & "|" & Format$(cp(CIRCLE_RADIUS_INDEX), GEOMETRY_KEY_FORMAT)
+                    If seen.Exists(key) Or dimensionKeys.Exists(key) Then
                         GoTo NextArc
                     End If
                     seen.Add key, True
@@ -2532,6 +2773,7 @@ Private Function RadiusDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As SldW
                         Set dd = d.AddRadialDimension2(outline(OUTLINE_RIGHT_INDEX) + RADIUS_LABEL_OFFSET_M, outline(OUTLINE_BOTTOM_INDEX) + RADIUS_LABEL_PITCH_M * RadiusDimensions, 0)
                         If Not dd Is Nothing Then
                             If ValidateDimension(d, v, dd, cp(CIRCLE_RADIUS_INDEX) * v.ScaleDecimal) Then
+                                dimensionKeys.Add key, True
                                 RadiusDimensions = RadiusDimensions + 1
                             End If
                         End If
@@ -2563,7 +2805,7 @@ Private Sub AddFlatDimensionSheet(ByVal d As SldWorks.ModelDoc2, ByVal doc As Sl
     v.ScaleDecimal = StandardScale(VIEW_FIT_SAFETY_FACTOR * MinD((sheetWidth - DETAIL_HORIZONTAL_RESERVED_M) / (bounds(OUTLINE_RIGHT_INDEX) - bounds(OUTLINE_LEFT_INDEX)), (sheetHeight - DETAIL_VERTICAL_RESERVED_M) / (bounds(OUTLINE_TOP_INDEX) - bounds(OUTLINE_BOTTOM_INDEX))))
     bounds = ProjectedFlatBounds(v): position = v.Position
     position(0) = position(0) + (sheetWidth + DETAIL_CENTER_X_BIAS_M) / 2 - (bounds(OUTLINE_LEFT_INDEX) + bounds(OUTLINE_RIGHT_INDEX)) / 2
-    position(1) = position(1) + DETAIL_CENTER_Y_BASE_M + (sheetHeight - DETAIL_CENTER_HEIGHT_REFERENCE_M) / 2 - (bounds(OUTLINE_BOTTOM_INDEX) + bounds(OUTLINE_TOP_INDEX)) / 2
+    position(1) = position(1) + (COORDINATE_BOTTOM_LIMIT_M + sheetHeight - COORDINATE_AXIS_TOP_MARGIN_M) / 2 - (bounds(OUTLINE_BOTTOM_INDEX) + bounds(OUTLINE_TOP_INDEX)) / 2
     v.Position = position
     Set sheet = AsDrawing(d).GetCurrentSheet
     detailScale = v.ScaleDecimal: SetPaperScale sheet, detailScale
@@ -2609,7 +2851,7 @@ Private Sub WriteDimensionCoverage(ByVal d As SldWorks.ModelDoc2, ByVal outName 
         Err.Raise vbObjectError + ERR_GENERATION_DATA, , "Cannot commit dimension-coverage.tsv"
     End If
 End Sub
-' Geometry-driven native dimensions. Every unique visible contour coordinate is included.
+' Native graphical dimensions with outside routing and collision-free text bands.
 ' Circle centers participate as real circular edges, never as loose sketch points.
 Private Function CoordinateDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal detail As Boolean) As Long
     Dim xs As Object, ys As Object, comps As Variant, ci As Variant, edges As Variant, ei As Variant
@@ -2646,8 +2888,8 @@ Private Function CoordinateDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As 
                             a(0) = cp(CIRCLE_CENTER_X_INDEX): a(1) = cp(CIRCLE_CENTER_Y_INDEX): a(2) = cp(CIRCLE_CENTER_Z_INDEX)
                             Set point = util.CreatePoint(a): Set point = point.MultiplyTransform(v.ModelToViewTransform)
                             p = point.ArrayData
-                            AddCoordinate xs, edge, p(0), v.ScaleDecimal
-                            AddCoordinate ys, edge, p(1), v.ScaleDecimal
+                            AddCoordinate xs, edge, p(0), v.ScaleDecimal, p(1)
+                            AddCoordinate ys, edge, p(1), v.ScaleDecimal, p(0)
                         End If
                     End If
                 End If
@@ -2662,8 +2904,8 @@ Private Function CoordinateDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As 
                         If Not vertex Is Nothing Then
                             Set point = util.CreatePoint(vertex.GetPoint): Set point = point.MultiplyTransform(v.ModelToViewTransform)
                             p = point.ArrayData
-                            AddCoordinate xs, vertex, p(0), v.ScaleDecimal
-                            AddCoordinate ys, vertex, p(1), v.ScaleDecimal
+                            AddCoordinate xs, vertex, p(0), v.ScaleDecimal, p(1)
+                            AddCoordinate ys, vertex, p(1), v.ScaleDecimal, p(0)
                         End If
                     Next endpoint
                 End If
@@ -2686,115 +2928,440 @@ Private Function CoordinateDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As 
     If detail Then
         geometryBounds = ProjectedFlatBounds(v)
     End If
-    CoordinateDimensions = CoordinateAxis(d, v, xs, 0, geometryBounds) + CoordinateAxis(d, v, ys, 1, geometryBounds)
+    routingXMinimum = CONTENT_LEFT_M
+    routingXMaximum = sheetWidth - COORDINATE_RIGHT_MARGIN_M
+    CoordinateAxis d, v, ys, 1, geometryBounds, detail, True
+    CoordinateDimensions = CoordinateAxis(d, v, xs, 0, geometryBounds, detail) + CoordinateAxis(d, v, ys, 1, geometryBounds, detail)
     Log "COORDINATES " & v.Name & " x=" & xs.Count & " y=" & ys.Count & " dimensions=" & CoordinateDimensions
     Exit Function
 Failed:
-    Warn "Coordinate dimensions " & v.Name & ": " & Err.Description
+    Dim savedNumber As Long, savedMessage As String
+    savedNumber = Err.Number
+    savedMessage = Err.Description
+    Err.Raise savedNumber, "CoordinateDimensions", savedMessage
 End Function
 
-Private Sub AddCoordinate(ByVal coordinates As Object, ByVal entity As Object, ByVal value As Double, ByVal viewScale As Double)
-    Dim key As String, record As Object
-    key = CStr(Round(value / viewScale, COORDINATE_KEY_DECIMALS)) ' 0.01 mm, matching displayed precision
+Private Sub AddCoordinate(ByVal coordinates As Object, ByVal entity As Object, ByVal value As Double, ByVal viewScale As Double, ByVal perpendicular As Double)
+    Dim key As String, record As Object, candidates As Collection
+    key = CStr(Round(value / viewScale, COORDINATE_KEY_DECIMALS))
     If coordinates.Exists(key) Then
-        Exit Sub
+        Set record = coordinates(key)
+        Set candidates = record("candidates")
+        candidates.Add entity
+        If perpendicular < CDbl(record("low")) - MIN_PROJECTED_EXTENT_M Then
+            record("low") = perpendicular
+            Set record("lowEntity") = entity
+        End If
+        If perpendicular > CDbl(record("high")) + MIN_PROJECTED_EXTENT_M Then
+            record("high") = perpendicular
+            Set record("highEntity") = entity
+        End If
+    Else
+        Set record = CreateObject("Scripting.Dictionary")
+        record.Add "coordinate", value
+        record.Add "low", perpendicular
+        record.Add "high", perpendicular
+        record.Add "lowEntity", entity
+        record.Add "highEntity", entity
+        Set candidates = New Collection
+        candidates.Add entity
+        record.Add "candidates", candidates
+        coordinates.Add key, record
     End If
-    Set record = CreateObject("Scripting.Dictionary")
-    record.Add "entity", entity: record.Add "coordinate", value
-    coordinates.Add key, record
 End Sub
 
-Private Function CoordinateAxis(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal coordinates As Object, ByVal axis As Long, ByVal geometryBounds As Variant) As Long
-    Dim keys As Variant, i As Long, j As Long, temp As Variant, first As Object, last As Object, entity As Object
-    Dim outline As Variant, lane As Long, occupied(COORDINATE_LAST_LANE) As Double, textWidth As Double, center As Double
-    Dim base As Double, location As Double, span As Double, maxLane As Long, lanes As Long, rc As Long
-    Dim candidate As Double, bestCenter As Double, bestCost As Double, cost As Double, bestLane As Long, limit As Double
-    Dim dd As SldWorks.DisplayDimension, dimension As SldWorks.Dimension, text As String
-    If coordinates.Count < COORDINATE_MIN_KEY_COUNT Then ' two coordinates are already dimensioned by OverallDimensions
+Private Function SelectRoutedReference(ByVal v As SldWorks.View, ByVal record As Object, ByVal side As Long, ByVal append As Boolean) As Boolean
+    Dim entity As Object, candidate As Variant, candidates As Collection
+    If side = 0 Then
+        Set entity = record("lowEntity")
+    Else
+        Set entity = record("highEntity")
+    End If
+    If v.SelectEntity(entity, append) Then
+        SelectRoutedReference = True
         Exit Function
     End If
-    keys = coordinates.Keys
-    For i = LBound(keys) + 1 To UBound(keys)
-        temp = keys(i): j = i - 1
-        Do While j >= LBound(keys)
-            If CDbl(keys(j)) <= CDbl(temp) Then
-                Exit Do
+    Set candidates = record("candidates")
+    For Each candidate In candidates
+        If v.SelectEntity(candidate, append) Then
+            SelectRoutedReference = True
+            Exit Function
+        End If
+    Next candidate
+End Function
+
+Private Function CoordinateIntervalKey(ByVal v As SldWorks.View, ByVal axis As Long, ByVal first As Double, ByVal last As Double, ByVal detail As Boolean) As String
+    Dim zero(2) As Double, util As SldWorks.MathUtility, point As SldWorks.MathPoint
+    Dim origin As Variant, startValue As Double, endValue As Double, direction(2) As Double
+    Dim vector As SldWorks.MathVector, values As Variant, i As Long, sign As Double
+    Set util = sw.GetMathUtility
+    Set point = util.CreatePoint(zero)
+    Set point = point.MultiplyTransform(v.ModelToViewTransform)
+    origin = point.ArrayData
+    direction(axis) = 1
+    Set vector = util.CreateVector(direction)
+    Set vector = vector.MultiplyTransform(v.ModelToViewTransform.Inverse)
+    values = vector.ArrayData
+    sign = 1
+    For i = 0 To UBound(direction)
+        If Abs(values(i)) > DIRECTION_ZERO_TOLERANCE Then
+            If values(i) < 0 Then
+                sign = -1
             End If
-            keys(j + 1) = keys(j): j = j - 1
-        Loop
-        keys(j + 1) = temp
+            Exit For
+        End If
     Next i
-    outline = geometryBounds
-    For i = 0 To COORDINATE_LAST_LANE: occupied(i) = -EMPTY_LANE_LIMIT: Next i
-    If axis = 0 Then
-        base = outline(OUTLINE_TOP_INDEX) + COORDINATE_BASE_OFFSET_M
-        maxLane = Int((sheetHeight - COORDINATE_TOP_MARGIN_M - base) / COORDINATE_LANE_PITCH_M)
-    Else
-        base = outline(OUTLINE_LEFT_INDEX) - COORDINATE_BASE_OFFSET_M
-        maxLane = Int((base - COORDINATE_LEFT_LIMIT_M) / COORDINATE_LANE_PITCH_M)
+    startValue = (first - origin(axis)) / v.ScaleDecimal * sign
+    endValue = (last - origin(axis)) / v.ScaleDecimal * sign
+    CoordinateIntervalKey = "coordinate|" & CStr(detail) & "|" & PhysicalAxisKey(v, axis) & "|" & Format$(MinD(startValue, endValue), GEOMETRY_KEY_FORMAT) & "|" & Format$(-MinD(-startValue, -endValue), GEOMETRY_KEY_FORMAT)
+End Function
+
+Private Function RequiredCoordinateLanes(ByVal plans As Collection, ByVal side As Long, ByVal axisMinimum As Double, ByVal axisMaximum As Double) As Long
+    Dim plan As Variant, count As Long, total As Double, lanes As Long, lane As Long
+    Dim index As Long, used As Double, fits As Boolean
+    If axisMaximum - axisMinimum < MIN_PROJECTED_EXTENT_M Then
+        Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "No available axis range for graphical dimension text."
     End If
-    If maxLane > COORDINATE_LAST_LANE Then
-        maxLane = COORDINATE_LAST_LANE
-    End If
-    If maxLane < 0 Then
-        maxLane = 0
-    End If
-    For i = LBound(keys) To UBound(keys) - 1
-        Set first = coordinates(keys(i)): Set last = coordinates(keys(i + 1))
-        span = CDbl(last("coordinate")) - CDbl(first("coordinate"))
-        If span < v.ScaleDecimal * MIN_DIMENSION_SPAN_M Then
-            GoTo NextCoordinate
+    For Each plan In plans
+        If CLng(plan("side")) = side Then
+            count = count + 1
+            total = total + CDbl(plan("width")) + COORDINATE_LABEL_GAP_M
+            If CDbl(plan("width")) > axisMaximum - axisMinimum Then
+                Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "A graphical dimension label is wider than its available band."
+            End If
         End If
-        center = (CDbl(first("coordinate")) + CDbl(last("coordinate"))) / 2
-        text = Format$(span / v.ScaleDecimal * MILLIMETRES_PER_METRE, DIMENSION_NUMBER_FORMAT)
-        textWidth = Len(text) * COORDINATE_GLYPH_WIDTH_M + COORDINATE_LABEL_PADDING_M
-        If axis = 0 Then
-            limit = sheetWidth - COORDINATE_RIGHT_MARGIN_M
-        Else
-            limit = sheetHeight - COORDINATE_TOP_MARGIN_M
-        End If
-        bestLane = -1: bestCost = SEARCH_INITIAL_LIMIT
-        For lane = 0 To maxLane
-            candidate = -MinD(-center, -(occupied(lane) + textWidth / 2 + COORDINATE_LABEL_GAP_M))
-            If candidate + textWidth / 2 <= limit Then
-                cost = Abs(candidate - center) + lane * COORDINATE_LANE_PENALTY_M
-                If cost < bestCost Then
-                    bestLane = lane
-                    bestCenter = candidate
-                    bestCost = cost
+    Next plan
+    If count = 0 Then
+        Exit Function
+    End If
+    lanes = -Int(-total / (axisMaximum - axisMinimum + COORDINATE_LABEL_GAP_M))
+    Do
+        fits = True
+        For lane = 0 To lanes - 1
+            index = 0
+            used = -COORDINATE_LABEL_GAP_M
+            For Each plan In plans
+                If CLng(plan("side")) = side Then
+                    If index Mod lanes = lane Then
+                        used = used + CDbl(plan("width")) + COORDINATE_LABEL_GAP_M
+                    End If
+                    index = index + 1
                 End If
+            Next plan
+            If used > axisMaximum - axisMinimum Then
+                fits = False
             End If
         Next lane
-        If bestLane < 0 Then
-            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Dimension labels do not fit selected sheet: " & v.Name
+        If fits Then
+            RequiredCoordinateLanes = lanes
+            Exit Function
         End If
-        lane = bestLane: center = bestCenter
-        occupied(lane) = center + textWidth / 2
-        AsDrawing(d).ActivateView "": d.ClearSelection2 True
-        If v.SelectEntity(first("entity"), False) And v.SelectEntity(last("entity"), True) Then
-            If axis = 0 Then
-                location = base + lane * COORDINATE_LANE_PITCH_M
-                Set dd = d.AddHorizontalDimension2(center, location, 0)
-            Else
-                location = base - lane * COORDINATE_LANE_PITCH_M
-                Set dd = d.AddVerticalDimension2(location, center, 0)
-            End If
-            If Not dd Is Nothing Then
-                Set dimension = dd.GetDimension2(SW_DIMENSION_INDEX_FIRST)
-                If Not dimension Is Nothing Then
-                    dimension.SetArcEndCondition 1, SW_ARC_CENTER: dimension.SetArcEndCondition 2, SW_ARC_CENTER
+        lanes = lanes + 1
+    Loop
+End Function
+
+Private Sub BalanceCoordinateSides(ByVal plans As Collection, ByVal axisMinimum As Double, ByVal axisMaximum As Double, ByVal lowLanes As Long, ByVal highLanes As Long)
+    Dim lowRequired As Long, highRequired As Long, sourceSide As Long, targetSide As Long
+    Dim targetCapacity As Long, plan As Variant, best As Object, cost As Double, bestCost As Double
+    Do
+        lowRequired = RequiredCoordinateLanes(plans, 0, axisMinimum, axisMaximum)
+        highRequired = RequiredCoordinateLanes(plans, 1, axisMinimum, axisMaximum)
+        If lowRequired <= lowLanes And highRequired <= highLanes Then
+            Exit Sub
+        End If
+        If lowRequired > lowLanes And highRequired > highLanes Then
+            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "The complete graphical dimension set does not fit the selected sheet."
+        End If
+        sourceSide = 0
+        targetCapacity = highLanes
+        If highRequired > highLanes Then
+            sourceSide = 1
+            targetCapacity = lowLanes
+        End If
+        targetSide = 1 - sourceSide
+        Set best = Nothing
+        bestCost = SEARCH_INITIAL_LIMIT
+        For Each plan In plans
+            If CLng(plan("side")) = sourceSide Then
+                plan("side") = targetSide
+                If RequiredCoordinateLanes(plans, targetSide, axisMinimum, axisMaximum) <= targetCapacity Then
+                    If targetSide = 0 Then
+                        cost = CDbl(plan("lowCost")) - CDbl(plan("highCost"))
+                    Else
+                        cost = CDbl(plan("highCost")) - CDbl(plan("lowCost"))
+                    End If
+                    If cost < bestCost Then
+                        Set best = plan
+                        bestCost = cost
+                    End If
                 End If
-                If ValidateDimension(d, v, dd, span) Then
-                    CoordinateAxis = CoordinateAxis + 1
-                End If
-            Else
-                Warn "Coordinate could not be dimensioned: " & v.Name & " span=" & text
+                plan("side") = sourceSide
             End If
+        Next plan
+        If best Is Nothing Then
+            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Graphical dimensions cannot be moved to the opposite free band without overlaps."
+        End If
+        best("side") = targetSide
+    Loop
+End Sub
+
+Private Sub PackCoordinateSide(ByVal plans As Collection, ByVal side As Long, ByVal axisMinimum As Double, ByVal axisMaximum As Double, ByVal firstLane As Double, ByVal maxLanes As Long, ByVal axis As Long)
+    Dim plan As Variant, count As Long, total As Double, lanes As Long, lane As Long
+    Dim index As Long, used As Double, fits As Boolean, previous As Double, position As Double, i As Long
+    For Each plan In plans
+        If CLng(plan("side")) = side Then
+            count = count + 1
+            total = total + CDbl(plan("width")) + COORDINATE_LABEL_GAP_M
+        End If
+    Next plan
+    If count = 0 Then
+        Exit Sub
+    End If
+    If maxLanes < 1 Then
+        Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "No free band for graphical dimensions."
+    End If
+    If maxLanes > COORDINATE_LAST_LANE + 1 Then
+        maxLanes = COORDINATE_LAST_LANE + 1
+    End If
+    lanes = -Int(-total / (axisMaximum - axisMinimum + COORDINATE_LABEL_GAP_M))
+    If lanes < 1 Then
+        lanes = 1
+    End If
+    Do
+        If lanes > maxLanes Then
+            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Graphical dimensions need more space on the selected sheet; choose a larger paper format."
+        End If
+        fits = True
+        For lane = 0 To lanes - 1
+            index = 0
+            used = -COORDINATE_LABEL_GAP_M
+            For Each plan In plans
+                If CLng(plan("side")) = side Then
+                    If index Mod lanes = lane Then
+                        used = used + CDbl(plan("width")) + COORDINATE_LABEL_GAP_M
+                    End If
+                    index = index + 1
+                End If
+            Next plan
+            If used > axisMaximum - axisMinimum Then
+                fits = False
+            End If
+        Next lane
+        If fits Then
+            Exit Do
+        End If
+        lanes = lanes + 1
+    Loop
+    If axis = 1 Then
+        If side = 0 Then
+            firstLane = COORDINATE_LEFT_LIMIT_M + (lanes - 1) * COORDINATE_LANE_PITCH_M
         Else
-            Warn "Coordinate selection failed: " & v.Name & " span=" & text
+            firstLane = sheetWidth - COORDINATE_AXIS_RIGHT_MARGIN_M - (lanes - 1) * COORDINATE_LANE_PITCH_M
         End If
-NextCoordinate:
-    Next i
+    End If
+    For lane = 0 To lanes - 1
+        index = 0
+        previous = axisMinimum - COORDINATE_LABEL_GAP_M
+        For Each plan In plans
+            If CLng(plan("side")) = side Then
+                If index Mod lanes = lane Then
+                    position = -MinD(-CDbl(plan("desired")), -(previous + COORDINATE_LABEL_GAP_M + CDbl(plan("width")) / 2))
+                    plan("center") = position
+                    plan("lane") = lane
+                    plan("location") = firstLane + (side * 2 - 1) * lane * COORDINATE_LANE_PITCH_M
+                    previous = position + CDbl(plan("width")) / 2
+                End If
+                index = index + 1
+            End If
+        Next plan
+        previous = axisMaximum + COORDINATE_LABEL_GAP_M
+        For i = plans.Count To 1 Step -1
+            Set plan = plans(i)
+            If CLng(plan("side")) = side And CLng(plan("lane")) = lane Then
+                position = MinD(CDbl(plan("center")), previous - COORDINATE_LABEL_GAP_M - CDbl(plan("width")) / 2)
+                plan("center") = position
+                previous = position - CDbl(plan("width")) / 2
+                If previous < axisMinimum - MIN_PROJECTED_EXTENT_M Then
+                    Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Graphical dimension text exceeds the available band."
+                End If
+            End If
+        Next i
+    Next lane
+End Sub
+
+Private Function CoordinateAxis(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal coordinates As Object, ByVal axis As Long, ByVal bounds As Variant, ByVal detail As Boolean, Optional ByVal layoutOnly As Boolean = False) As Long
+    Dim keys As Variant, i As Long, runEnd As Long, first As Object, last As Object
+    Dim plans As Collection, plan As Variant, pitch As Double, nextPitch As Double, span As Double
+    Dim lowEdge As Double, highEdge As Double, lowDistance As Double, highDistance As Double
+    Dim lowCount As Long, highCount As Long, side As Long, lowLane As Double, highLane As Double
+    Dim lowLanes As Long, highLanes As Long, axisMinimum As Double, axisMaximum As Double
+    Dim text As String, prefixText As String, overallKey As String, intervalKey As String
+    Dim dd As SldWorks.DisplayDimension, dimension As SldWorks.Dimension, annotation As SldWorks.Annotation
+    Dim covered As Long, repeated As Long, grouped As Long
+    If coordinates.Count < COORDINATE_MIN_KEY_COUNT Then
+        Exit Function
+    End If
+    Set plans = New Collection
+    keys = SortedCoordinateKeys(coordinates)
+    If axis = 0 Then
+        lowEdge = bounds(OUTLINE_BOTTOM_INDEX)
+        highEdge = bounds(OUTLINE_TOP_INDEX)
+        axisMinimum = routingXMinimum
+        axisMaximum = routingXMaximum
+    Else
+        lowEdge = bounds(OUTLINE_LEFT_INDEX)
+        highEdge = bounds(OUTLINE_RIGHT_INDEX)
+        axisMinimum = COORDINATE_BOTTOM_LIMIT_M
+        axisMaximum = sheetHeight - COORDINATE_AXIS_TOP_MARGIN_M
+    End If
+    lowLane = lowEdge - COORDINATE_BASE_OFFSET_M
+    highLane = highEdge + COORDINATE_BASE_OFFSET_M
+    If axis = 0 Then
+        lowLanes = Int((lowLane - COORDINATE_BOTTOM_LIMIT_M) / COORDINATE_LANE_PITCH_M) + 1
+        highLanes = Int((sheetHeight - COORDINATE_TOP_MARGIN_M - highLane) / COORDINATE_LANE_PITCH_M) + 1
+    Else
+        lowLanes = Int((lowLane - COORDINATE_LEFT_LIMIT_M) / COORDINATE_LANE_PITCH_M) + 1
+        highLanes = Int((sheetWidth - COORDINATE_AXIS_RIGHT_MARGIN_M - highLane) / COORDINATE_LANE_PITCH_M) + 1
+    End If
+    If lowLanes < 0 Then
+        lowLanes = 0
+    End If
+    If highLanes < 0 Then
+        highLanes = 0
+    End If
+    If lowLanes > COORDINATE_LAST_LANE + 1 Then
+        lowLanes = COORDINATE_LAST_LANE + 1
+    End If
+    If highLanes > COORDINATE_LAST_LANE + 1 Then
+        highLanes = COORDINATE_LAST_LANE + 1
+    End If
+    i = LBound(keys)
+    Do While i < UBound(keys)
+        runEnd = i + 1
+        Set first = coordinates(keys(i))
+        Set last = coordinates(keys(runEnd))
+        pitch = CDbl(last("coordinate")) - CDbl(first("coordinate"))
+        Do While runEnd < UBound(keys)
+            nextPitch = CDbl(coordinates(keys(runEnd + 1))("coordinate")) - CDbl(coordinates(keys(runEnd))("coordinate"))
+            If Abs(nextPitch - pitch) > v.ScaleDecimal * DIMENSION_MATCH_TOLERANCE_M Then
+                Exit Do
+            End If
+            runEnd = runEnd + 1
+        Loop
+        Set last = coordinates(keys(runEnd))
+        span = CDbl(last("coordinate")) - CDbl(first("coordinate"))
+        intervalKey = CoordinateIntervalKey(v, axis, CDbl(first("coordinate")), CDbl(last("coordinate")), detail)
+        prefixText = ""
+        If dimensionKeys.Exists(intervalKey) Then
+            covered = covered + runEnd - i
+            repeated = repeated + 1
+            GoTo NextRun
+        End If
+        If runEnd - i > 1 Then
+            prefixText = CStr(runEnd - i) & "x " & Format$(pitch / v.ScaleDecimal * MILLIMETRES_PER_METRE, DIMENSION_NUMBER_FORMAT) & " = "
+            overallKey = "overall|" & CStr(detail) & "|" & PhysicalAxisKey(v, axis) & "|" & Format$(span / v.ScaleDecimal, GEOMETRY_KEY_FORMAT)
+            If i = LBound(keys) And runEnd = UBound(keys) And dimensionKeys.Exists(overallKey) Then
+                Set dd = dimensionKeys(overallKey)
+                dd.SetText SW_DIMENSION_TEXT_PREFIX, prefixText & dd.GetText(SW_DIMENSION_TEXT_PREFIX)
+                dimensionKeys.Add intervalKey, True
+                covered = covered + runEnd - i
+                grouped = grouped + 1
+                GoTo NextRun
+            End If
+        End If
+        lowDistance = CDbl(first("low")) + CDbl(last("low")) - lowEdge * 2 + lowCount * COORDINATE_SIDE_BALANCE_M
+        highDistance = highEdge * 2 - CDbl(first("high")) - CDbl(last("high")) + highCount * COORDINATE_SIDE_BALANCE_M
+        side = 0
+        If highDistance < lowDistance Then
+            side = 1
+        End If
+        Set plan = CreateObject("Scripting.Dictionary")
+        plan.Add "side", side
+        plan.Add "lowCost", CDbl(first("low")) + CDbl(last("low")) - lowEdge * 2
+        plan.Add "highCost", highEdge * 2 - CDbl(first("high")) - CDbl(last("high"))
+        plan.Add "firstRecord", first
+        plan.Add "lastRecord", last
+        If side = 0 Then
+            plan.Add "first", first("lowEntity")
+            plan.Add "last", last("lowEntity")
+            lowCount = lowCount + 1
+        Else
+            plan.Add "first", first("highEntity")
+            plan.Add "last", last("highEntity")
+            highCount = highCount + 1
+        End If
+        text = prefixText & Format$(span / v.ScaleDecimal * MILLIMETRES_PER_METRE, DIMENSION_NUMBER_FORMAT)
+        plan.Add "width", Len(text) * COORDINATE_GLYPH_WIDTH_M + COORDINATE_LABEL_PADDING_M
+        plan.Add "desired", (CDbl(first("coordinate")) + CDbl(last("coordinate"))) / 2
+        plan.Add "span", span
+        plan.Add "prefix", prefixText
+        plan.Add "key", intervalKey
+        plan.Add "count", runEnd - i
+        plan.Add "lane", -1
+        plans.Add plan
+NextRun:
+        i = runEnd
+    Loop
+    BalanceCoordinateSides plans, axisMinimum, axisMaximum, lowLanes, highLanes
+    PackCoordinateSide plans, 0, axisMinimum, axisMaximum, lowLane, lowLanes, axis
+    PackCoordinateSide plans, 1, axisMinimum, axisMaximum, highLane, highLanes, axis
+    If layoutOnly Then
+        For Each plan In plans
+            If CLng(plan("side")) = 0 Then
+                routingXMinimum = -MinD(-routingXMinimum, -(CDbl(plan("location")) + TEXT_HEIGHT_STANDARD_M + COORDINATE_LABEL_GAP_M))
+            Else
+                routingXMaximum = MinD(routingXMaximum, CDbl(plan("location")) - TEXT_HEIGHT_STANDARD_M - COORDINATE_LABEL_GAP_M)
+            End If
+        Next plan
+        Exit Function
+    End If
+    For Each plan In plans
+        AsDrawing(d).ActivateView ""
+        d.ClearSelection2 True
+        If Not SelectRoutedReference(v, plan("firstRecord"), CLng(plan("side")), False) Then
+            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Cannot select the first graphical dimension reference."
+        End If
+        If Not SelectRoutedReference(v, plan("lastRecord"), CLng(plan("side")), True) Then
+            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Cannot select the second graphical dimension reference."
+        End If
+        If axis = 0 Then
+            Set dd = d.AddHorizontalDimension2(CDbl(plan("center")), CDbl(plan("location")), 0)
+        Else
+            Set dd = d.AddVerticalDimension2(CDbl(plan("location")), CDbl(plan("center")), 0)
+        End If
+        If dd Is Nothing Then
+            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Cannot create a graphical dimension."
+        End If
+        Set dimension = dd.GetDimension2(SW_DIMENSION_INDEX_FIRST)
+        If Not dimension Is Nothing Then
+            dimension.SetArcEndCondition 1, SW_ARC_CENTER
+            dimension.SetArcEndCondition 2, SW_ARC_CENTER
+        End If
+        If Not ValidateDimension(d, v, dd, CDbl(plan("span"))) Then
+            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Graphical dimension measured an unexpected span."
+        End If
+        dd.CenterText = False
+        dd.SmartWitness = True
+        dd.MaxWitnessLineLength = ROUTED_WITNESS_MAX_LENGTH_M
+        If CDbl(plan("span")) < DIMENSION_ARROW_CLEARANCE_M Then
+            dd.ArrowSide = SW_DIMENSION_ARROWS_OUTSIDE
+        Else
+            dd.ArrowSide = SW_DIMENSION_ARROWS_INSIDE
+        End If
+        If Len(CStr(plan("prefix"))) > 0 Then
+            dd.SetText SW_DIMENSION_TEXT_PREFIX, CStr(plan("prefix")) & dd.GetText(SW_DIMENSION_TEXT_PREFIX)
+        End If
+        Set annotation = dd.GetAnnotation
+        If axis = 0 Then
+            annotation.SetPosition2 CDbl(plan("center")), CDbl(plan("location")), 0
+        Else
+            annotation.SetPosition2 CDbl(plan("location")), CDbl(plan("center")), 0
+        End If
+        dimensionKeys.Add CStr(plan("key")), True
+        covered = covered + CLng(plan("count"))
+        CoordinateAxis = CoordinateAxis + 1
+    Next plan
+    Log "ROUTING " & v.Name & " axis=" & axis & " intervals=" & (coordinates.Count - 1) & " covered=" & covered & " placed=" & CoordinateAxis & " duplicate=" & repeated & " grouped=" & grouped
     d.ClearSelection2 True
 End Function
 
@@ -2802,6 +3369,7 @@ End Function
 Public Sub main()
     Dim source As SldWorks.ModelDoc2, p As String, cfg As String, key As Variant, job As Object
     Dim errNumber As Long, errText As String
+    Dim retryBatch As Boolean, attemptSetting As String
     On Error GoTo Fatal
     Set sw = Application.SldWorks
     Set fs = CreateObject("Scripting.FileSystemObject")
@@ -2810,8 +3378,17 @@ Public Sub main()
     progressPath = "": runDir = "": plannedJobs = 0
     backgroundOwned = False: attempts = 0: resumeRun = False
     completed = 0: failures = 0: warningCount = 0: jobNumber = 0: viewCounter = 0
+    batchFailures = 0: interruptedJobNumber = 0
     ReadSettings sw.GetCurrentMacroPathFolder & SETTINGS_RELATIVE_PATH
     progressPath = Setting("LauncherProgress", "")
+    attemptSetting = Setting("MaxJobAttempts", DEFAULT_MAX_JOB_ATTEMPTS_TEXT)
+    If Not IsNumeric(attemptSetting) Then
+        Err.Raise vbObjectError + ERR_DRAWING_SETTINGS, , "MaxJobAttempts must be a positive integer."
+    End If
+    maxJobAttempts = CLng(attemptSetting)
+    If maxJobAttempts < 1 Or CDbl(attemptSetting) <> maxJobAttempts Then
+        Err.Raise vbObjectError + ERR_DRAWING_SETTINGS, , "MaxJobAttempts must be a positive integer."
+    End If
     ReportProgress STATE_RUNNING, "VBA started"
     If Setting("LauncherBackground", "0") = "1" Then
         If CStr(sw.GetProcessID) = Setting("LauncherForbiddenPID", "0") Then
@@ -2881,6 +3458,7 @@ Public Sub main()
     Dim er As Long, wr As Long
     If resumeRun Then
         LoadCheckpoint
+        SaveCheckpoint
         Log "RESUME existing plan; completed=" & completed & " total=" & jobs.Count
     Else
         ' A new snapshot must reflect a saved source. Resume uses only saved Models/.
@@ -2940,14 +3518,20 @@ Public Sub main()
     sw.SetUserPreferenceToggle SW_PREF_PDF_IN_COLOR, False
     sw.SetUserPreferenceToggle SW_PREF_PDF_HIGH_QUALITY, True
     preferenceChanged = True
+    retryBatch = Not HasPendingJobs()
+    WriteFailedJobs
     For Each key In jobs.Keys
         Set job = jobs(key)
-        If CStr(job("status")) <> STATE_DONE Then
+        If JobEligible(job, retryBatch) Then
             jobNumber = CLng(job("number"))
+            job("attempts") = CLng(job("attempts")) + 1
             job("status") = STATE_RUNNING: job("stage") = "Opening model"
             SaveCheckpoint
             attempts = attempts + 1
+            Log "ATTEMPT " & job("out") & " " & job("attempts") & "/" & maxJobAttempts
             ProcessJob job
+            interruptedJobNumber = 0
+            WriteFailedJobs
             Set flatBody = Nothing
             ' Close copied assemblies before copied parts, after ProcessJob releases locals.
             CloseSnapshots
@@ -2957,7 +3541,7 @@ Public Sub main()
                 End If
             End If
             If CLng(Setting("MaxFailures", "0")) > 0 Then
-                If failures >= CLng(Setting("MaxFailures", "0")) Then
+                If batchFailures >= CLng(Setting("MaxFailures", "0")) Then
                     Exit For
                 End If
             End If
@@ -2966,7 +3550,7 @@ Public Sub main()
     Next key
     RestorePreferences
     CloseSnapshots
-    Log "COMPLETE drawings=" & completed & " failed=" & failures & " warnings=" & warningCount
+    Log "BATCH END drawings=" & completed & " failed=" & failures & " attempts=" & attempts & " warnings=" & warningCount
     If Not logFile Is Nothing Then
         logFile.Close
     End If
@@ -2984,12 +3568,12 @@ Public Sub main()
             Err.Raise vbObjectError + ERR_APPLICATION_STATE, , "Background frame is on screen."
         End If
     End If
-    If failures = 0 And completed = plannedJobs Then
+    If completed = plannedJobs Then
         ReportProgress STATE_COMPLETE, "Drawings=" & completed & "; warnings=" & warningCount
-    ElseIf failures = 0 Then
-        ReportProgress STATE_PAUSED, "Batch saved; drawings=" & completed & "/" & plannedJobs
+    ElseIf HasRunnableJobs() Then
+        ReportProgress STATE_PAUSED, "Batch saved; drawings=" & completed & "/" & plannedJobs & "; failed=" & failures & "; continuing automatically"
     Else
-        ReportProgress STATE_FAILED, "Drawings=" & completed & "; failed=" & failures & "; selected=" & plannedJobs
+        ReportProgress STATE_FAILED, "All jobs attempted; drawings=" & completed & "; failed=" & failures & "; selected=" & plannedJobs & "; attempt limits reached. See failed-jobs.tsv."
     End If
     Debug.Print "Drawing pack: " & completed & " drawings; " & failures & " failures. " & runDir
     If Setting("ShowSummary", "0") = "1" Then

@@ -80,7 +80,7 @@ try:
     custom = folder/'\u0428\u0430\u0431\u043b\u043e\u043d\u044b \u0441 \u043f\u0440\u043e\u0431\u0435\u043b\u0430\u043c\u0438'
     custom.mkdir(exist_ok=True)
     shutil.copy2(base/'templates/A4.landscape.drwdot',custom/'A4.landscape.drwdot')
-    case('custom template directory', [model,'/format:A4','/templates:'+str(custom)],1,'Another launcher is running')
+    case('custom template directory', [model,'/format:A4','/orientation:landscape','/templates:'+str(custom)],1,'Another launcher is running')
     ini2 = folder/'template-settings.ini'
     ini2.write_bytes(('PaperFormat=A4\r\nPaperOrientation=portrait\r\nDrawingTemplate='+str(base/'templates/A4.portrait.drwdot')+'\r\n').encode('utf-16'))
     case('INI paper and explicit template', [model,ini2],1,'Another launcher is running')
