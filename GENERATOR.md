@@ -95,6 +95,8 @@ Keep drawing output separate from the program directory. The console displays th
 
 Temporary `SourceBackup/` files protect the original models during snapshot creation. The current snapshot's backups are removed after the snapshot is validated and source restoration succeeds. Failures retain those backups.
 
+Linked external CAD files, including STEP dependencies, are included in the model snapshot. Pack and Go applies the destination folder and filename prefix to the complete dependency set; every returned destination is checked before saving.
+
 ## Resume and retry
 
 The launcher automatically continues between batches and after drawing errors or an interrupted SolidWorks process. Completed drawings whose artifacts match the checkpoint are skipped. An interrupted drawing restarts from its beginning; missing artifacts are regenerated.

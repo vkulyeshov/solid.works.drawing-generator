@@ -67,9 +67,10 @@ python -B tests/test_build.py
 python -B tests/test_launcher_contract.py
 python -B tests/test_controller_recovery.py
 python -B tests/test_snapshot_cleanup.py
+python -B tests/test_snapshot_targets.py
 ```
 
-These check source/native consistency, output paths, repository hygiene, package contents, VBS entry points and arguments, build failures, checkpoint recovery, and backup cleanup. WSH tests require Windows. Run the launcher contract and controller recovery tests sequentially when no generator holds the shared lock.
+These check source/native consistency, output paths, repository hygiene, package contents, VBS entry points and arguments, build failures, checkpoint recovery, backup cleanup, and snapshot targets including linked STEP files. WSH tests require Windows. Run the launcher contract and controller recovery tests sequentially when no generator holds the shared lock.
 
 ### SolidWorks integration tests
 

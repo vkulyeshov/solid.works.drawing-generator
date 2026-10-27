@@ -552,9 +552,52 @@ Private Sub EnsureFolder(ByVal path As String)
     fs.CreateFolder path
 End Sub
 
+Private Function ConfigureSnapshotTargets(ByVal pg As Object, ByVal names As Variant) As Variant
+    Dim targets As Variant, documentStates As Variant, fileIndex As Long
+    Dim folder As String, target As String, seen As Object
+    folder = fs.GetAbsolutePathName(runDir & MODELS_RELATIVE_PATH)
+    ' Let Pack and Go manage imported CAD dependencies as well as native documents.
+    ' SetDocumentSaveToNames can reject a list containing a linked STEP document.
+    If Not pg.SetSaveToName(True, folder) Then
+        Err.Raise vbObjectError + ERR_PACK_TARGETS, , "Pack and Go rejected the snapshot folder: " & folder
+    End If
+    pg.AddPrefix = prefix
+    pg.AddSuffix = ""
+    If Not pg.GetDocumentSaveToNames(targets, documentStates) Then
+        Err.Raise vbObjectError + ERR_PACK_TARGETS, , "Cannot read the Pack and Go destination names."
+    End If
+    If Not IsArray(targets) Then
+        Err.Raise vbObjectError + ERR_PACK_TARGETS, , "Pack and Go returned no destination array."
+    End If
+    If LBound(targets) <> LBound(names) Or UBound(targets) <> UBound(names) Then
+        Err.Raise vbObjectError + ERR_PACK_TARGETS, , "Pack and Go destination count does not match the dependency list."
+    End If
+    Set seen = CreateObject("Scripting.Dictionary")
+    seen.CompareMode = vbTextCompare
+    For fileIndex = LBound(names) To UBound(names)
+        If Len(CStr(targets(fileIndex))) = 0 Then
+            Err.Raise vbObjectError + ERR_PACK_TARGETS, , "Pack and Go excluded a required dependency: " & CStr(names(fileIndex))
+        End If
+        target = fs.GetAbsolutePathName(CStr(targets(fileIndex)))
+        If StrComp(fs.GetParentFolderName(target), folder, vbTextCompare) <> 0 Then
+            Err.Raise vbObjectError + ERR_PACK_TARGETS, , "Pack and Go destination is outside Models: " & target
+        End If
+        If StrComp(fs.GetExtensionName(target), fs.GetExtensionName(CStr(names(fileIndex))), vbTextCompare) <> 0 Then
+            Err.Raise vbObjectError + ERR_PACK_TARGETS, , "Pack and Go changed a dependency file type: " & target
+        End If
+        If seen.Exists(target) Then
+            Err.Raise vbObjectError + ERR_PACK_TARGETS, , "Duplicate Pack and Go destination: " & target
+        End If
+        seen.Add target, True
+    Next fileIndex
+    Log "PACK destination names configured; files=" & seen.Count
+    ConfigureSnapshotTargets = targets
+End Function
+
 Private Function MakeSnapshot(ByVal doc As SldWorks.ModelDoc2) As String
     Dim extension As SldWorks.ModelDocExtension, pg As SldWorks.PackAndGo, names As Variant, results As Variant, n As Variant, seen As Object
     Dim backupList As Object, backupComplete As Boolean, savedError As Long, savedText As String
+    Dim destinationNames As Variant, fileIndex As Long
     On Error GoTo SnapshotFailed
     Log "PACK get object"
     Set extension = doc.Extension
@@ -578,6 +621,7 @@ Private Function MakeSnapshot(ByVal doc As SldWorks.ModelDoc2) As String
         seen.Add fs.GetFileName(CStr(n)), True
     Next n
     prefix = SNAPSHOT_PREFIX & Format$(Now, TIMESTAMP_FORMAT) & "_"
+    destinationNames = ConfigureSnapshotTargets(pg, names)
     EnsureFolder runDir & SOURCE_BACKUP_RELATIVE_DIRECTORY & prefix
     Set backupList = fs.CreateTextFile(runDir & SOURCE_BACKUP_INDEX_RELATIVE_PATH, True, True)
     backupList.WriteLine "Original" & vbTab & "Backup"
@@ -588,14 +632,6 @@ Private Function MakeSnapshot(ByVal doc As SldWorks.ModelDoc2) As String
     backupList.Close
     backupComplete = True
     Log "SOURCE exact file backups created before Pack and Go"
-    Dim destinationNames() As String, fileIndex As Long
-    ReDim destinationNames(LBound(names) To UBound(names))
-    For fileIndex = LBound(names) To UBound(names)
-        destinationNames(fileIndex) = runDir & MODELS_RELATIVE_DIRECTORY & prefix & fs.GetFileName(CStr(names(fileIndex)))
-    Next fileIndex
-    If pg.SetDocumentSaveToNames(destinationNames) = False Then
-        Err.Raise vbObjectError + ERR_PACK_TARGETS, , "Pack and Go names rejected."
-    End If
     Log "PACK save"
     results = doc.Extension.SavePackAndGo(pg)
     If IsEmpty(results) Then
