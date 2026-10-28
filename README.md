@@ -68,9 +68,12 @@ python -B tests/test_launcher_contract.py
 python -B tests/test_controller_recovery.py
 python -B tests/test_snapshot_cleanup.py
 python -B tests/test_snapshot_targets.py
+python -B tests/test_dimension_layout.py
 ```
 
 These check source/native consistency, output paths, repository hygiene, package contents, VBS entry points and arguments, build failures, checkpoint recovery, backup cleanup, and snapshot targets including linked STEP files. WSH tests require Windows. Run the launcher contract and controller recovery tests sequentially when no generator holds the shared lock.
+
+The dimension-layout tests execute the VBA marker, spacing, row-placement, and local-datum graph routines under WSH. They check that overflow fails instead of losing dimensions. An optional external `dimension_layout/geometry.json` fixture, captured by `InspectDimensionLayout.ps1 -IncludeGeometry`, runs a capacity audit against native projected vertices and writes an external `geometry-capacity.json` report. A reported capacity limitation is not a successful drawing-layout verification.
 
 ### SolidWorks integration tests
 
@@ -104,3 +107,5 @@ python -B tests/test_failed_job_recovery.py
 The crash test interrupts only its own background SolidWorks process. The failed-job test extends the disposable single-job A4 landscape queue to check version 2 migration, continuation after a failed batch, bounded retries, and preservation of completed drawings. These tests modify their fixture queue; use a fresh `A4.landscape` case for another independent run.
 
 `test_compact_dimensions.py --before ORIGINAL_PACK --after UPDATED_PACK` compares external LeftSide drawing packs for graphical dimension coverage, deduplication, text overlap, page boundaries, and preservation of the flat dimensions on one sheet. Optional `--pattern-pack FOUR_HOLE_PACK` checks repeated-hole callouts and equal-pitch labels. All comparison paths must point outside the repository.
+
+`InspectDimensionLayout.ps1 -DrawingPath EXTERNAL_DRAWING -OutputPath EXTERNAL_JSON` reads native dimension text, arrowheads, extension lines, and view scales in its own SolidWorks process. Add `-IncludeGeometry` only when projected vertex data is needed. The strict same-sheet layout solver remains experimental; LeftSide on A4 is a known failing case. The default runtime keeps compatible generation and reports unresolved placement through `LAYOUT REVIEW` warnings. Package or unit-test success must not be presented as full GOST compliance.

@@ -25,6 +25,22 @@ Private Const SW_PREF_UNIT_SYSTEM As Long = 263
 Private Const SW_PREF_LINEAR_UNITS As Long = 47
 Private Const SW_PREF_LINEAR_PRECISION As Long = 24
 Private Const SW_PREF_ANGULAR_PRECISION As Long = 28
+Private Const SW_PREF_ARROW_HEAD_LENGTH As Long = 24
+Private Const SW_PREF_ARROW_HEAD_WIDTH As Long = 25
+Private Const SW_PREF_ARROW_LENGTH As Long = 26
+Private Const SW_PREF_WITNESS_EXTENSION As Long = 14
+Private Const SW_PREF_WITNESS_GAP As Long = 13
+Private Const SW_PREF_DIMENSION_ROW_OFFSET As Long = 16
+Private Const SW_PREF_DIMENSION_OBJECT_OFFSET As Long = 15
+Private Const SW_PREF_DIMENSION_ARROW_STYLE As Long = 16
+Private Const SW_PREF_DIMENSION_ARROW_POSITION As Long = 17
+Private Const SW_PREF_DIMENSION_TRAILING_ZEROES As Long = 15
+Private Const SW_PREF_SCALE_ARROWS_WITH_TEXT As Long = 310
+Private Const SW_PREFERENCE_NO_OPTION As Long = 0
+Private Const SW_ARROW_CLOSED As Long = 1
+Private Const SW_ARROW_DOT As Long = 3
+Private Const SW_REMOVE_TRAILING_ZEROES As Long = 2
+Private Const SW_SOLID_LEADER_ALIGNED_TEXT As Long = 1
 Private Const SW_HIDE_AXES As Long = 4
 Private Const SW_HIDE_PLANES As Long = 5
 Private Const SW_HIDE_ORIGINS As Long = 6
@@ -162,6 +178,24 @@ Private Const MIN_CIRCLE_RADIUS_M As Double = 0.00005
 Private Const SCALE_REDUCTION_THRESHOLD As Double = 0.999
 Private Const SCALE_COMPARISON_TOLERANCE As Double = 0.0000001
 Private Const VIEW_FIT_SAFETY_FACTOR As Double = 0.95
+Private Const DIMENSION_LAYOUT_RETRY_SCALE_FACTOR As Double = 0.99
+Private Const DIMENSION_LAYOUT_SCALE_ATTEMPTS As Long = 4
+Private Const DETAIL_GRID_COLUMNS As Long = 2
+Private Const DETAIL_GRID_ROWS As Long = 2
+Private Const DETAIL_OVERVIEW_HEIGHT_M As Double = 0.055
+Private Const DETAIL_CELL_GAP_M As Double = 0.004
+Private Const DETAIL_PROFILE_MARGIN_M As Double = 0.0003
+Private Const DETAIL_MIN_ZOOM_FACTOR As Double = 2
+Private Const DETAIL_MAX_INTERVALS As Long = 64
+Private Const LOCAL_REFERENCE_PERPENDICULAR_WEIGHT As Double = 1
+Private Const LOCAL_DATUM_BAND_COUNT As Long = 32
+Private Const LOCAL_DATUM_CHAIN_PRIORITY As Double = 0.001
+Private Const DETAIL_TRIGGER_SPAN_M As Double = 0.005
+Private Const DETAIL_DIMENSION_BAND_M As Double = 0.019
+Private Const SW_DETAIL_STANDARD As Long = 0
+Private Const SW_DETAIL_CIRCLE As Long = 1
+Private Const SW_DETAIL_OUTLINE_INTENSITY As Long = 5
+Private Const DETAIL_FIRST_LABEL_CODE As Long = 65
 
 ' Sheet dimensions and reference layout (metres)
 Private Const A4_SHORT_SIDE_M As Double = 0.21
@@ -242,37 +276,46 @@ Private Const BOM_SPLIT_COLUMN_COUNT As Long = 4
 Private Const BOM_FIXED_COLUMN_COUNT As Long = 2
 
 ' Dimension label layout (metres)
-Private Const DIAMETER_LABEL_OFFSET_M As Double = 0.008
+Private Const DIAMETER_LABEL_OFFSET_M As Double = 0.012
 Private Const DIAMETER_LABEL_PITCH_M As Double = 0.014
-Private Const OVERALL_LABEL_OFFSET_M As Double = 0.009
+Private Const OVERALL_LABEL_OFFSET_M As Double = 0.012
 Private Const DETAIL_OVERALL_LABEL_OFFSET_M As Double = 0.012
-Private Const RADIUS_LABEL_OFFSET_M As Double = 0.008
+Private Const RADIUS_LABEL_OFFSET_M As Double = 0.012
 Private Const RADIUS_LABEL_PITCH_M As Double = 0.009
 
 ' Coordinate dimension layout
 Private Const COORDINATE_LAST_LANE As Long = 16
-Private Const COORDINATE_BASE_OFFSET_M As Double = 0.008
+Private Const COORDINATE_BASE_OFFSET_M As Double = 0.012
 Private Const COORDINATE_TOP_MARGIN_M As Double = 0.04
 Private Const COORDINATE_LEFT_LIMIT_M As Double = 0.026
-Private Const COORDINATE_LANE_PITCH_M As Double = 0.006
+Private Const COORDINATE_LANE_PITCH_M As Double = 0.007
 Private Const EMPTY_LANE_LIMIT As Double = 1E+20
 Private Const COORDINATE_GLYPH_WIDTH_M As Double = 0.00165
 Private Const COORDINATE_LABEL_PADDING_M As Double = 0.003
 Private Const COORDINATE_RIGHT_MARGIN_M As Double = 0.015
 Private Const COORDINATE_LABEL_GAP_M As Double = 0.002
 Private Const COORDINATE_LANE_PENALTY_M As Double = 0.0001
+Private Const COORDINATE_ROW_PRIORITY_M As Double = 0.01
 Private Const COORDINATE_MIN_KEY_COUNT As Long = 3
 Private Const COORDINATE_KEY_DECIMALS As Long = 5
 Private Const COORDINATE_BOTTOM_LIMIT_M As Double = 0.082
 Private Const COORDINATE_AXIS_TOP_MARGIN_M As Double = 0.045
 Private Const COORDINATE_AXIS_RIGHT_MARGIN_M As Double = 0.012
 Private Const COORDINATE_SIDE_BALANCE_M As Double = 0.00015
-Private Const DIMENSION_ARROW_CLEARANCE_M As Double = 0.006
-Private Const ROUTED_WITNESS_MAX_LENGTH_M As Double = 0.006
+Private Const GOST_OBJECT_OFFSET_M As Double = 0.01
+Private Const GOST_ARROW_HEAD_LENGTH_M As Double = 0.0025
+Private Const GOST_ARROW_HEAD_WIDTH_M As Double = 0.000881635
+Private Const GOST_ARROW_LENGTH_M As Double = 0.005
+Private Const GOST_WITNESS_EXTENSION_M As Double = 0.002
+Private Const GOST_WITNESS_GAP_M As Double = 0
+Private Const GOST_CHAIN_DOT_DIAMETER_M As Double = 0.00045
+Private Const DIMENSION_GEOMETRY_GAP_M As Double = 0.0003
+Private Const ARROW_HEAD_INDEX_FIRST As Long = 0
 Private Const OVERALL_FOOTER_CLEARANCE_M As Double = 0.01
 Private Const OVERALL_RIGHT_MARGIN_M As Double = 0.007
 Private Const SW_DIMENSION_ARROWS_INSIDE As Long = 0
 Private Const SW_DIMENSION_ARROWS_OUTSIDE As Long = 1
+Private Const SW_DIMENSION_ARROWS_SMART As Long = 2
 Private Const DIRECTION_KEY_DECIMALS As Long = 4
 Private Const DIRECTION_ZERO_TOLERANCE As Double = 0.000001
 
@@ -398,7 +441,7 @@ Private Const OUTPUT_FOLDER_RELATIVE_PREFIX As String = "\DrawingPack_"
 Private Const SOURCE_BACKUP_RELATIVE_DIRECTORY As String = "\SourceBackup\"
 Private Const NAMED_VIEW_PREFIX As String = "AD_VIEW_"
 Private Const NAMED_FLAT_VIEW_PREFIX As String = "AD_FLAT_"
-Private Const RENDER_SIGNATURE_PREFIX As String = "20261026-v5-graphical|PaperFormat="
+Private Const RENDER_SIGNATURE_PREFIX As String = "20261028-v8-arrow-style|PaperFormat="
 
 ' API array field indices
 Private Const SHEET_WIDTH_PROPERTY As Long = 5
@@ -440,6 +483,12 @@ Private maxJobAttempts As Long, batchFailures As Long, interruptedJobNumber As L
 Private sw As SldWorks.SldWorks, fs As Object, logFile As Object, manifest As Object
 Private dimensionKeys As Object
 Private routingXMinimum As Double, routingXMaximum As Double
+Private coordinateSelection As Object
+Private coordinateRegion As Variant
+Private coordinateSourceView As SldWorks.View
+Private coordinateSourceX As Object, coordinateSourceY As Object
+Private coordinateSourceOrigin As Variant, coordinateSourceScale As Double
+Private coordinateAssignedRequests As Collection
 Private jobs As Object, quantities As Object, settings As Object
 Private runDir As String, sourceDir As String, prefix As String, templatePath As String
 Private paperFormat As String, paperOrientation As String, runtimeFormatPath As String
@@ -1067,6 +1116,10 @@ Private Sub ProcessJob(ByVal j As Object)
     End If
     ' Reopen to refresh cached drawing display data before PDF export.
     dimensionKeys.RemoveAll
+    Set coordinateSelection = Nothing
+    Set coordinateSourceView = Nothing
+    Set coordinateAssignedRequests = Nothing
+    coordinateRegion = Empty
     sw.CloseDoc d.GetTitle
     Set d = sw.OpenDoc6(runDir & DRAWINGS_RELATIVE_DIRECTORY & outName & DRAWING_EXTENSION, SW_DOC_DRAWING, SW_OPEN_SILENT, "", er, wr)
     If d Is Nothing Then
@@ -1120,6 +1173,10 @@ Private Sub ProcessJob(ByVal j As Object)
     SaveCheckpoint
     Log "OK " & outName & " dims(main)=" & dims
     dimensionKeys.RemoveAll
+    Set coordinateSelection = Nothing
+    Set coordinateSourceView = Nothing
+    Set coordinateAssignedRequests = Nothing
+    coordinateRegion = Empty
     sw.CloseDoc d.GetTitle
     Set currentDrawing = Nothing
     Exit Sub
@@ -1139,6 +1196,10 @@ Failed:
     End If
     If Not d Is Nothing Then
         dimensionKeys.RemoveAll
+    Set coordinateSelection = Nothing
+    Set coordinateSourceView = Nothing
+    Set coordinateAssignedRequests = Nothing
+    coordinateRegion = Empty
         sw.CloseDoc d.GetTitle
     End If
     Set currentDrawing = Nothing
@@ -1151,6 +1212,17 @@ Private Sub ConfigureDrawing(ByVal d As SldWorks.ModelDoc2)
     d.Extension.SetUserPreferenceInteger SW_PREF_LINEAR_UNITS, 0, SW_LENGTH_MILLIMETRES ' millimetres
     d.Extension.SetUserPreferenceInteger SW_PREF_LINEAR_PRECISION, 0, LINEAR_DECIMAL_PLACES
     d.Extension.SetUserPreferenceInteger SW_PREF_ANGULAR_PRECISION, 0, ANGULAR_DECIMAL_PLACES
+    d.Extension.SetUserPreferenceDouble SW_PREF_ARROW_HEAD_LENGTH, SW_PREFERENCE_NO_OPTION, GOST_ARROW_HEAD_LENGTH_M
+    d.Extension.SetUserPreferenceDouble SW_PREF_ARROW_HEAD_WIDTH, SW_PREFERENCE_NO_OPTION, GOST_ARROW_HEAD_WIDTH_M
+    d.Extension.SetUserPreferenceDouble SW_PREF_ARROW_LENGTH, SW_PREFERENCE_NO_OPTION, GOST_ARROW_LENGTH_M
+    d.Extension.SetUserPreferenceDouble SW_PREF_WITNESS_EXTENSION, SW_PREFERENCE_NO_OPTION, GOST_WITNESS_EXTENSION_M
+    d.Extension.SetUserPreferenceDouble SW_PREF_WITNESS_GAP, SW_PREFERENCE_NO_OPTION, GOST_WITNESS_GAP_M
+    d.Extension.SetUserPreferenceDouble SW_PREF_DIMENSION_ROW_OFFSET, SW_PREFERENCE_NO_OPTION, COORDINATE_LANE_PITCH_M
+    d.Extension.SetUserPreferenceDouble SW_PREF_DIMENSION_OBJECT_OFFSET, SW_PREFERENCE_NO_OPTION, GOST_OBJECT_OFFSET_M
+    d.Extension.SetUserPreferenceInteger SW_PREF_DIMENSION_ARROW_STYLE, SW_PREFERENCE_NO_OPTION, SW_ARROW_CLOSED
+    d.Extension.SetUserPreferenceInteger SW_PREF_DIMENSION_ARROW_POSITION, SW_PREFERENCE_NO_OPTION, SW_DIMENSION_ARROWS_SMART
+    d.Extension.SetUserPreferenceInteger SW_PREF_DIMENSION_TRAILING_ZEROES, SW_PREFERENCE_NO_OPTION, SW_REMOVE_TRAILING_ZEROES
+    d.Extension.SetUserPreferenceToggle SW_PREF_SCALE_ARROWS_WITH_TEXT, SW_PREFERENCE_NO_OPTION, False
     Dim toggleId As Variant
     For Each toggleId In Array(SW_HIDE_AXES, SW_HIDE_PLANES, SW_HIDE_ORIGINS, SW_HIDE_TEMPORARY_AXES, SW_HIDE_COORDINATE_SYSTEMS, SW_HIDE_REFERENCE_POINTS, SW_HIDE_CURVES, SW_HIDE_SKETCHES, SW_HIDE_REFERENCE_POINTS_2)
         d.SetUserPreferenceToggle CLng(toggleId), False
@@ -2052,6 +2124,7 @@ Private Sub NormalizeDimensions(ByVal d As SldWorks.ModelDoc2)
             Set display = v.GetFirstDisplayDimension5
             Do While Not display Is Nothing
                 display.SetPrecision3 LINEAR_DECIMAL_PLACES, LINEAR_DECIMAL_PLACES, LINEAR_DECIMAL_PLACES, LINEAR_DECIMAL_PLACES
+                ApplyGostDimensionStyle display
                 Set ann = display.GetAnnotation
                 ann.SetTextFormat SW_ANNOTATION_TEXT_FORMAT_FIRST, False, tf
                 Set display = display.GetNext5
@@ -2060,6 +2133,121 @@ Private Sub NormalizeDimensions(ByVal d As SldWorks.ModelDoc2)
         Loop
     Next sheetName
 End Sub
+
+Private Sub ApplyGostDimensionStyle(ByVal display As SldWorks.DisplayDimension)
+    Dim firstStyle As Long, secondStyle As Long, annotation As SldWorks.Annotation, i As Long
+    ' GOST 2.307: retain complete extension lines and place arrows by actual fit.
+    display.SmartWitness = False
+    display.ExtensionLineUseDocumentDisplay = True
+    display.GetArrowHeadStyle2 firstStyle, secondStyle
+    If firstStyle = SW_ARROW_DOT And secondStyle = SW_ARROW_DOT Then
+        display.ArrowSide = SW_DIMENSION_ARROWS_INSIDE
+        Set annotation = display.GetAnnotation
+        For i = ARROW_HEAD_INDEX_FIRST To annotation.GetArrowHeadCount - 1
+            annotation.SetArrowHeadSizeAtIndex i, False, GOST_CHAIN_DOT_DIAMETER_M, GOST_CHAIN_DOT_DIAMETER_M, GOST_CHAIN_DOT_DIAMETER_M
+        Next i
+    Else
+        display.SetArrowHeadStyle2 False, SW_ARROW_CLOSED, SW_ARROW_CLOSED
+    End If
+    display.SetBrokenLeader2 False, SW_SOLID_LEADER_ALIGNED_TEXT
+End Sub
+
+Private Function UseCoordinateDots(ByVal span As Double) As Boolean
+    UseCoordinateDots = span >= GOST_CHAIN_DOT_DIAMETER_M + DIMENSION_GEOMETRY_GAP_M And span < GOST_ARROW_HEAD_LENGTH_M * 2
+End Function
+
+Private Function CoordinateMarkerPadding(ByVal span As Double, ByVal textWidth As Double) As Double
+    If UseCoordinateDots(span) Then
+        CoordinateMarkerPadding = GOST_CHAIN_DOT_DIAMETER_M / 2 + DIMENSION_GEOMETRY_GAP_M
+    ElseIf span < textWidth + GOST_ARROW_HEAD_LENGTH_M * 2 Then
+        CoordinateMarkerPadding = GOST_ARROW_LENGTH_M + DIMENSION_GEOMETRY_GAP_M
+    Else
+        CoordinateMarkerPadding = DIMENSION_GEOMETRY_GAP_M
+    End If
+End Function
+
+Private Function CoordinateTextCenter(ByVal coordinates As Object, ByVal keys As Variant, ByVal first As Double, ByVal last As Double, ByVal textWidth As Double, ByVal minimum As Double, ByVal maximum As Double) As Double
+    Dim result As Double
+    If Not FindCoordinateTextCenter(coordinates, keys, first, last, textWidth, minimum, maximum, result) Then
+        Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "No clear dimension text position away from the extension lines."
+    End If
+    CoordinateTextCenter = result
+End Function
+
+Private Function FindCoordinateTextCenter(ByVal coordinates As Object, ByVal keys As Variant, ByVal first As Double, ByVal last As Double, ByVal textWidth As Double, ByVal minimum As Double, ByVal maximum As Double, ByRef result As Double) As Boolean
+    Dim i As Long, start As Double, finish As Double, candidate As Double, desired As Double, best As Double
+    Dim halfWidth As Double, padding As Double, distance As Double, valid As Boolean, found As Boolean
+    desired = (first + last) / 2
+    halfWidth = textWidth / 2
+    padding = CoordinateMarkerPadding(last - first, textWidth)
+    best = SEARCH_INITIAL_LIMIT
+    start = minimum
+    For i = LBound(keys) To UBound(keys) + 1
+        finish = maximum
+        If i <= UBound(keys) Then
+            finish = MinD(maximum, CDbl(coordinates(keys(i))("coordinate")) - COORDINATE_LABEL_GAP_M)
+        End If
+        If finish - start >= textWidth Then
+            candidate = -MinD(-start - halfWidth, -MinD(desired, finish - halfWidth))
+            If candidate + halfWidth <= first Then
+                candidate = MinD(candidate, first - padding - DIMENSION_GEOMETRY_GAP_M - halfWidth)
+            ElseIf candidate - halfWidth >= last Then
+                candidate = -MinD(-candidate, -last - padding - DIMENSION_GEOMETRY_GAP_M - halfWidth)
+            End If
+            valid = False
+            If candidate + halfWidth <= first - padding - DIMENSION_GEOMETRY_GAP_M Then
+                valid = True
+            ElseIf candidate - halfWidth >= last + padding + DIMENSION_GEOMETRY_GAP_M Then
+                valid = True
+            ElseIf candidate - halfWidth >= first + DIMENSION_GEOMETRY_GAP_M And candidate + halfWidth <= last - DIMENSION_GEOMETRY_GAP_M Then
+                valid = True
+            End If
+            valid = valid And candidate - halfWidth >= start And candidate + halfWidth <= finish
+            distance = Abs(candidate - desired)
+            If valid And distance < best Then
+                result = candidate
+                best = distance
+                found = True
+            End If
+        End If
+        If i <= UBound(keys) Then
+            start = -MinD(-minimum, -CDbl(coordinates(keys(i))("coordinate")) - COORDINATE_LABEL_GAP_M)
+        End If
+    Next i
+    FindCoordinateTextCenter = found
+End Function
+
+Private Function SortCoordinatePlans(ByVal plans As Collection) As Collection
+    Dim sorted As New Collection, plan As Variant, i As Long, inserted As Boolean
+    For Each plan In plans
+        inserted = False
+        For i = 1 To sorted.Count
+            If CDbl(plan("lineStart")) < CDbl(sorted(i)("lineStart")) Then
+                sorted.Add plan, Before:=i
+                inserted = True
+                Exit For
+            End If
+        Next i
+        If Not inserted Then
+            sorted.Add plan
+        End If
+    Next plan
+    Set SortCoordinatePlans = sorted
+End Function
+
+
+Private Function DimensionLabel(ByVal value As Double) As String
+    Dim text As String
+    text = Format$(value, DIMENSION_NUMBER_FORMAT)
+    ' Keep the configured precision; remove only insignificant trailing zeroes.
+    Do While Right$(text, 1) = "0"
+        text = Left$(text, Len(text) - 1)
+    Loop
+    If Right$(text, 1) = "." Or Right$(text, 1) = "," Then
+        text = Left$(text, Len(text) - 1)
+    End If
+    DimensionLabel = text
+End Function
 
 
 
@@ -2431,7 +2619,7 @@ End Function
 Private Function RenderSettingsSignature() As String
     Dim key As Variant
     RenderSettingsSignature = RENDER_SIGNATURE_PREFIX & paperFormat & "|Template=" & templatePath & "|TemplateStamp=" & FileStamp(templatePath)
-    For Each key In Array("Font", "Organization", "AutoDimensions", "MaxEdgesForAutoDimensions", "ImportModelDimensions", "UpAxis", "DimensionSpacing", "Liter1", "Liter2", "Liter3", "DrawnBy", "DrawnDate", "CheckedBy", "CheckedDate", "TechnicalControlBy", "TechnicalControlDate", "NormControlBy", "NormControlDate", "ApprovedBy", "ApprovedDate")
+    For Each key In Array("Font", "Organization", "AutoDimensions", "MaxEdgesForAutoDimensions", "ImportModelDimensions", "UpAxis", "StrictDimensionLayout", "DimensionSpacing", "Liter1", "Liter2", "Liter3", "DrawnBy", "DrawnDate", "CheckedBy", "CheckedDate", "TechnicalControlBy", "TechnicalControlDate", "NormControlBy", "NormControlDate", "ApprovedBy", "ApprovedDate")
         RenderSettingsSignature = RenderSettingsSignature & "|" & CStr(key) & "=" & Setting(CStr(key), "")
     Next key
 End Function
@@ -2839,20 +3027,618 @@ Private Sub AddFlatDimensionSheet(ByVal d As SldWorks.ModelDoc2, ByVal doc As Sl
     d.ForceRebuild3 False
     bounds = ProjectedFlatBounds(v)
     v.ScaleDecimal = StandardScale(VIEW_FIT_SAFETY_FACTOR * MinD((sheetWidth - DETAIL_HORIZONTAL_RESERVED_M) / (bounds(OUTLINE_RIGHT_INDEX) - bounds(OUTLINE_LEFT_INDEX)), (sheetHeight - DETAIL_VERTICAL_RESERVED_M) / (bounds(OUTLINE_TOP_INDEX) - bounds(OUTLINE_BOTTOM_INDEX))))
-    bounds = ProjectedFlatBounds(v): position = v.Position
-    position(0) = position(0) + (sheetWidth + DETAIL_CENTER_X_BIAS_M) / 2 - (bounds(OUTLINE_LEFT_INDEX) + bounds(OUTLINE_RIGHT_INDEX)) / 2
-    position(1) = position(1) + (COORDINATE_BOTTOM_LIMIT_M + sheetHeight - COORDINATE_AXIS_TOP_MARGIN_M) / 2 - (bounds(OUTLINE_BOTTOM_INDEX) + bounds(OUTLINE_TOP_INDEX)) / 2
-    v.Position = position
+    v.SetDisplayMode3 False, SW_DISPLAY_HIDDEN_LINES_REMOVED, False, False
+    If FitFlatDimensionLayout(d, v) Then
+        rc = OverallDimensions(d, v, True)
+        DimensionFeatures d, v, True
+    Else
+        AddSameSheetDimensionDetails d, v
+    End If
     Set sheet = AsDrawing(d).GetCurrentSheet
     detailScale = v.ScaleDecimal: SetPaperScale sheet, detailScale
-    v.SetDisplayMode3 False, SW_DISPLAY_HIDDEN_LINES_REMOVED, False, False
     d.ForceRebuild3 False
-    rc = OverallDimensions(d, v, True)
-    DimensionFeatures d, v, True
     AsDrawing(d).ActivateView "": d.ClearSelection2 True
     RefreshTemplateFields d
     AddText d, "РОЗГОРТКА - КООРДИНАТНІ РОЗМІРИ ТА ОТВОРИ", CONTENT_LEFT_M, sheetHeight - SECTION_HEADER_TOP_MARGIN_M, TEXT_HEIGHT_SMALL_M, 0
 End Sub
+
+Private Function CoordinateRegionEdge(ByVal index As Long) As Double
+    If Not IsEmpty(coordinateRegion) Then
+        CoordinateRegionEdge = coordinateRegion(index)
+        Exit Function
+    End If
+    Select Case index
+        Case OUTLINE_LEFT_INDEX
+            CoordinateRegionEdge = COORDINATE_LEFT_LIMIT_M
+        Case OUTLINE_BOTTOM_INDEX
+            CoordinateRegionEdge = COORDINATE_BOTTOM_LIMIT_M
+        Case OUTLINE_RIGHT_INDEX
+            CoordinateRegionEdge = sheetWidth - COORDINATE_AXIS_RIGHT_MARGIN_M
+        Case OUTLINE_TOP_INDEX
+            CoordinateRegionEdge = sheetHeight - COORDINATE_AXIS_TOP_MARGIN_M
+    End Select
+End Function
+
+Private Function ViewOrigin(ByVal v As SldWorks.View) As Variant
+    Dim util As SldWorks.MathUtility, point As SldWorks.MathPoint, zero(2) As Double
+    Set util = sw.GetMathUtility
+    Set point = util.CreatePoint(zero)
+    Set point = point.MultiplyTransform(v.ModelToViewTransform)
+    ViewOrigin = point.ArrayData
+End Function
+
+Private Function DetailCoordinate(ByVal value As Double, ByVal axis As Long, ByVal v As SldWorks.View) As Double
+    Dim origin As Variant
+    origin = ViewOrigin(v)
+    DetailCoordinate = origin(axis) + (value - coordinateSourceOrigin(axis)) * v.ScaleDecimal / coordinateSourceScale
+End Function
+
+Private Function TransformCoordinates(ByVal coordinates As Object, ByVal sourceView As SldWorks.View, ByVal v As SldWorks.View, ByVal axis As Long) As Object
+    Dim key As Variant, record As Object, result As Object, candidates As Collection, positions As Collection, i As Long
+    Dim origin As Variant, ratio As Double, value As Double, perpendicular As Double
+    origin = ViewOrigin(v)
+    ratio = v.ScaleDecimal / coordinateSourceScale
+    Set result = CreateObject("Scripting.Dictionary")
+    For Each key In coordinates.Keys
+        Set record = coordinates(key)
+        Set candidates = record("candidates")
+        Set positions = record("candidatePositions")
+        For i = 1 To candidates.Count
+            value = origin(axis) + (CDbl(record("coordinate")) - coordinateSourceOrigin(axis)) * ratio
+            perpendicular = origin(1 - axis) + (CDbl(positions(i)) - coordinateSourceOrigin(1 - axis)) * ratio
+            AddCoordinate result, candidates(i), value, v.ScaleDecimal, perpendicular
+        Next i
+    Next key
+    Set TransformCoordinates = result
+End Function
+
+Private Function CompactCoordinateRecord(ByVal original As Object, ByVal entity As Object, ByVal perpendicular As Double) As Object
+    Dim record As Object, candidates As Collection, positions As Collection
+    Set record = CreateObject("Scripting.Dictionary")
+    record.Add "coordinate", original("coordinate")
+    record.Add "low", perpendicular
+    record.Add "high", perpendicular
+    record.Add "lowEntity", entity
+    record.Add "highEntity", entity
+    Set candidates = New Collection
+    candidates.Add entity
+    Set positions = New Collection
+    positions.Add perpendicular
+    record.Add "candidates", candidates
+    record.Add "candidatePositions", positions
+    Set CompactCoordinateRecord = record
+End Function
+
+Private Sub SetCompactPlanReferences(ByVal plan As Object)
+    Dim first As Object, last As Object, a As Collection, b As Collection, pa As Collection, pb As Collection
+    Dim i As Long, j As Long, ai As Long, bi As Long, distance As Double, best As Double
+    Set first = plan("firstRecord")
+    Set last = plan("lastRecord")
+    Set a = first("candidates")
+    Set b = last("candidates")
+    Set pa = first("candidatePositions")
+    Set pb = last("candidatePositions")
+    best = SEARCH_INITIAL_LIMIT
+    For i = 1 To a.Count
+        For j = 1 To b.Count
+            distance = Abs(CDbl(pa(i)) - CDbl(pb(j)))
+            If distance < best Then
+                best = distance
+                ai = i
+                bi = j
+            End If
+        Next j
+    Next i
+    Set plan("firstRecord") = CompactCoordinateRecord(first, a(ai), CDbl(pa(ai)))
+    Set plan("lastRecord") = CompactCoordinateRecord(last, b(bi), CDbl(pb(bi)))
+End Sub
+
+Private Function MakeCoordinateRequest(ByVal v As SldWorks.View, ByVal first As Object, ByVal last As Object, ByVal axis As Long, ByVal detail As Boolean, ByVal count As Long, ByVal pitch As Double, ByVal fullRange As Boolean, ByVal compact As Boolean) As Object
+    Dim request As Object
+    Set request = CreateObject("Scripting.Dictionary")
+    request.Add "firstRecord", first
+    request.Add "lastRecord", last
+    request.Add "axis", axis
+    request.Add "key", CoordinateIntervalKey(v, axis, CDbl(first("coordinate")), CDbl(last("coordinate")), detail)
+    request.Add "span", CDbl(last("coordinate")) - CDbl(first("coordinate"))
+    request.Add "count", count
+    request.Add "pitch", pitch
+    request.Add "fullRange", fullRange
+    If compact Then
+        SetCompactPlanReferences request
+    End If
+    Set first = request("firstRecord")
+    Set last = request("lastRecord")
+    If axis = 0 Then
+        request.Add "bounds", Array(CDbl(first("coordinate")), MinD(CDbl(first("low")), CDbl(last("low"))), CDbl(last("coordinate")), -MinD(-CDbl(first("low")), -CDbl(last("low"))))
+    Else
+        request.Add "bounds", Array(MinD(CDbl(first("low")), CDbl(last("low"))), CDbl(first("coordinate")), -MinD(-CDbl(first("low")), -CDbl(last("low"))), CDbl(last("coordinate")))
+    End If
+    Set MakeCoordinateRequest = request
+End Function
+
+Private Function ReferencePairCost(ByVal first As Object, ByVal last As Object) As Double
+    Dim a As Collection, b As Collection, pa As Variant, pb As Variant, perpendicular As Double, difference As Double
+    Set a = first("candidatePositions")
+    Set b = last("candidatePositions")
+    perpendicular = SEARCH_INITIAL_LIMIT
+    For Each pa In a
+        For Each pb In b
+            perpendicular = MinD(perpendicular, Abs(CDbl(pa) - CDbl(pb)))
+        Next pb
+    Next pa
+    difference = CDbl(last("coordinate")) - CDbl(first("coordinate"))
+    ReferencePairCost = Sqr(difference ^ 2 + (perpendicular * LOCAL_REFERENCE_PERPENDICULAR_WEIGHT) ^ 2)
+End Function
+
+Private Function LocalNeighborBands(ByVal coordinates As Object, ByVal keys As Variant) As Object
+    Dim result As Object, i As Long, band As Long, prior As Long, point As Variant
+    Dim minimum As Double, maximum As Double, width As Double, present As Boolean, pointBand As Long, key As String
+    Set result = CreateObject("Scripting.Dictionary")
+    minimum = SEARCH_INITIAL_LIMIT
+    maximum = -SEARCH_INITIAL_LIMIT
+    For i = LBound(keys) To UBound(keys)
+        For Each point In coordinates(keys(i))("candidatePositions")
+            minimum = MinD(minimum, CDbl(point))
+            maximum = -MinD(-maximum, -CDbl(point))
+        Next point
+    Next i
+    width = (maximum - minimum) / LOCAL_DATUM_BAND_COUNT
+    If width < MIN_PROJECTED_EXTENT_M Then
+        width = MIN_PROJECTED_EXTENT_M
+    End If
+    For band = 0 To LOCAL_DATUM_BAND_COUNT - 1
+        prior = -1
+        For i = LBound(keys) To UBound(keys)
+            present = False
+            For Each point In coordinates(keys(i))("candidatePositions")
+                pointBand = Int((CDbl(point) - minimum) / width)
+                If pointBand >= LOCAL_DATUM_BAND_COUNT Then
+                    pointBand = LOCAL_DATUM_BAND_COUNT - 1
+                End If
+                If pointBand = band Then
+                    present = True
+                    Exit For
+                End If
+            Next point
+            If present Then
+                If prior >= 0 Then
+                    key = CStr(prior) & "|" & CStr(i)
+                    If Not result.Exists(key) Then
+                        result.Add key, Array(minimum + band * width, minimum + (band + 1) * width)
+                    End If
+                End If
+                prior = i
+            End If
+        Next i
+    Next band
+    Set LocalNeighborBands = result
+End Function
+
+Private Function LocalDatumPairs(ByVal coordinates As Object) As Collection
+    Dim result As New Collection, keys As Variant, connected() As Boolean, costs() As Double, parents() As Long
+    Dim i As Long, stepIndex As Long, lastConnected As Long, chosen As Long, count As Long
+    Dim cost As Double, best As Double, firstIndex As Long, lastIndex As Long, pair As Object, bands As Object, key As String
+    count = coordinates.Count
+    If count < 2 Then
+        Set LocalDatumPairs = result
+        Exit Function
+    End If
+    keys = SortedCoordinateKeys(coordinates)
+    Set bands = LocalNeighborBands(coordinates, keys)
+    ReDim connected(0 To count - 1)
+    ReDim costs(0 To count - 1)
+    ReDim parents(0 To count - 1)
+    connected(0) = True
+    lastConnected = 0
+    For i = 1 To count - 1
+        costs(i) = SEARCH_INITIAL_LIMIT
+    Next i
+    ' Each new link joins one previously unmeasured coordinate to the datum graph.
+    ' Nearby references are preferred, so unrelated opposite-end features do not interleave.
+    For stepIndex = 1 To count - 1
+        best = SEARCH_INITIAL_LIMIT
+        chosen = -1
+        For i = 0 To count - 1
+            If Not connected(i) Then
+                cost = ReferencePairCost(coordinates(keys(lastConnected)), coordinates(keys(i)))
+                key = CStr(MinD(lastConnected, i)) & "|" & CStr(-MinD(-lastConnected, -i))
+                If bands.Exists(key) Then
+                    cost = cost * LOCAL_DATUM_CHAIN_PRIORITY
+                End If
+                If cost < costs(i) Then
+                    costs(i) = cost
+                    parents(i) = lastConnected
+                End If
+                If costs(i) < best Then
+                    best = costs(i)
+                    chosen = i
+                End If
+            End If
+        Next i
+        If chosen < 0 Then
+            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "The local datum graph does not cover every coordinate."
+        End If
+        firstIndex = MinD(chosen, parents(chosen))
+        lastIndex = -MinD(-chosen, -parents(chosen))
+        Set pair = CreateObject("Scripting.Dictionary")
+        pair.Add "firstRecord", coordinates(keys(firstIndex))
+        pair.Add "lastRecord", coordinates(keys(lastIndex))
+        pair.Add "fullRange", firstIndex = 0 And lastIndex = count - 1
+        key = CStr(firstIndex) & "|" & CStr(lastIndex)
+        If bands.Exists(key) Then
+            pair.Add "band", bands(key)
+        Else
+            pair.Add "band", Empty
+        End If
+        result.Add pair
+        connected(chosen) = True
+        lastConnected = chosen
+    Next stepIndex
+    Set LocalDatumPairs = result
+End Function
+
+Private Function BandedCoordinateRecord(ByVal record As Object, ByVal band As Variant, ByVal viewScale As Double) As Object
+    Dim candidates As Collection, positions As Collection, result As Object, i As Long, value As Double, key As Variant
+    If IsEmpty(band) Then
+        Set BandedCoordinateRecord = record
+        Exit Function
+    End If
+    Set candidates = record("candidates")
+    Set positions = record("candidatePositions")
+    Set result = CreateObject("Scripting.Dictionary")
+    For i = 1 To candidates.Count
+        value = CDbl(positions(i))
+        If value >= band(0) - MIN_PROJECTED_EXTENT_M And value <= band(1) + MIN_PROJECTED_EXTENT_M Then
+            AddCoordinate result, candidates(i), CDbl(record("coordinate")), viewScale, value
+        End If
+    Next i
+    For Each key In result.Keys
+        Set BandedCoordinateRecord = result(key)
+        Exit Function
+    Next key
+    Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "A local datum band has no selectable reference."
+End Function
+
+Private Function LocalDatumRequests(ByVal v As SldWorks.View, ByVal coordinates As Object, ByVal axis As Long) As Collection
+    Dim requests As New Collection, pairs As Collection, pair As Variant, first As Object, last As Object
+    Set pairs = LocalDatumPairs(coordinates)
+    For Each pair In pairs
+        Set first = BandedCoordinateRecord(pair("firstRecord"), pair("band"), v.ScaleDecimal)
+        Set last = BandedCoordinateRecord(pair("lastRecord"), pair("band"), v.ScaleDecimal)
+        requests.Add MakeCoordinateRequest(v, first, last, axis, True, 1, CDbl(last("coordinate")) - CDbl(first("coordinate")), CBool(pair("fullRange")), True)
+    Next pair
+    Set LocalDatumRequests = requests
+End Function
+
+Private Function ShiftCoordinateRecord(ByVal original As Object, ByVal origin As Variant, ByVal ratio As Double, ByVal axis As Long, ByVal viewScale As Double) As Object
+    Dim result As Object, candidates As Collection, positions As Collection, i As Long, value As Double, perpendicular As Double, key As Variant
+    Set result = CreateObject("Scripting.Dictionary")
+    Set candidates = original("candidates")
+    Set positions = original("candidatePositions")
+    value = origin(axis) + (CDbl(original("coordinate")) - coordinateSourceOrigin(axis)) * ratio
+    For i = 1 To candidates.Count
+        perpendicular = origin(1 - axis) + (CDbl(positions(i)) - coordinateSourceOrigin(1 - axis)) * ratio
+        AddCoordinate result, candidates(i), value, viewScale, perpendicular
+    Next i
+    For Each key In result.Keys
+        Set ShiftCoordinateRecord = result(key)
+        Exit Function
+    Next key
+End Function
+
+Private Function AssignedRequestsForView(ByVal v As SldWorks.View, ByVal axis As Long) As Collection
+    Dim result As New Collection, request As Variant, shifted As Object, first As Object, last As Object, origin As Variant, ratio As Double
+    origin = ViewOrigin(v)
+    ratio = v.ScaleDecimal / coordinateSourceScale
+    For Each request In coordinateAssignedRequests
+        If CLng(request("axis")) = axis Then
+            If Not coordinateSelection Is Nothing Then
+                If Not coordinateSelection.Exists(CStr(request("key"))) Then
+                    GoTo NextRequest
+                End If
+            End If
+            Set first = ShiftCoordinateRecord(request("firstRecord"), origin, ratio, axis, v.ScaleDecimal)
+            Set last = ShiftCoordinateRecord(request("lastRecord"), origin, ratio, axis, v.ScaleDecimal)
+            Set shifted = MakeCoordinateRequest(v, first, last, axis, True, CLng(request("count")), CDbl(request("pitch")) * ratio, CBool(request("fullRange")), False)
+            shifted("key") = CStr(request("key"))
+            result.Add shifted
+        End If
+NextRequest:
+    Next request
+    Set AssignedRequestsForView = result
+End Function
+
+Private Function RequestCoordinates(ByVal requests As Collection, ByVal viewScale As Double) As Object
+    Dim result As Object, request As Variant, name As Variant, record As Object, candidates As Collection, positions As Collection, i As Long
+    Set result = CreateObject("Scripting.Dictionary")
+    For Each request In requests
+        For Each name In Array("firstRecord", "lastRecord")
+            Set record = request(name)
+            Set candidates = record("candidates")
+            Set positions = record("candidatePositions")
+            For i = 1 To candidates.Count
+                AddCoordinate result, candidates(i), CDbl(record("coordinate")), viewScale, CDbl(positions(i))
+            Next i
+        Next name
+    Next request
+    Set RequestCoordinates = result
+End Function
+
+Private Sub ValidateLocalDatumCoverage(ByVal v As SldWorks.View, ByVal requests As Collection)
+    Dim axis As Long, nodes As Object, coordinates As Object, request As Variant, name As Variant, record As Object, key As Variant, counts(1) As Long
+    For axis = 0 To 1
+        Set nodes = CreateObject("Scripting.Dictionary")
+        If axis = 0 Then
+            Set coordinates = coordinateSourceX
+        Else
+            Set coordinates = coordinateSourceY
+        End If
+        For Each request In requests
+            If CLng(request("axis")) = axis Then
+                If Not dimensionKeys.Exists(CStr(request("key"))) Then
+                    Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "A local datum link has no graphical dimension."
+                End If
+                For Each name In Array("firstRecord", "lastRecord")
+                    Set record = request(name)
+                    key = CStr(Round(CDbl(record("coordinate")) / coordinateSourceScale, COORDINATE_KEY_DECIMALS))
+                    nodes(key) = True
+                Next name
+            End If
+        Next request
+        If coordinates.Count >= COORDINATE_MIN_KEY_COUNT Then
+            For Each key In coordinates.Keys
+                If Not nodes.Exists(CStr(key)) Then
+                    Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "A source coordinate is missing from the graphical datum graph."
+                End If
+            Next key
+        End If
+        counts(axis) = nodes.Count
+    Next axis
+    Log "GOST LOCAL COVERAGE expectedX=" & coordinateSourceX.Count & "; coveredX=" & counts(0) & "; expectedY=" & coordinateSourceY.Count & "; coveredY=" & counts(1) & "; sheets added=0"
+End Sub
+
+Private Function AdjacentCoordinateRequests(ByVal v As SldWorks.View, ByVal coordinates As Object, ByVal axis As Long, ByVal detail As Boolean) As Collection
+    Dim requests As New Collection, keys As Variant, i As Long, lastIndex As Long
+    Dim first As Object, last As Object, plan As Object, pitch As Double, nextPitch As Double
+    If coordinates.Count < COORDINATE_MIN_KEY_COUNT Then
+        Set AdjacentCoordinateRequests = requests
+        Exit Function
+    End If
+    keys = SortedCoordinateKeys(coordinates)
+    i = LBound(keys)
+    Do While i < UBound(keys)
+        lastIndex = i + 1
+        pitch = CDbl(coordinates(keys(lastIndex))("coordinate")) - CDbl(coordinates(keys(i))("coordinate"))
+        Do While lastIndex < UBound(keys)
+            nextPitch = CDbl(coordinates(keys(lastIndex + 1))("coordinate")) - CDbl(coordinates(keys(lastIndex))("coordinate"))
+            If Abs(nextPitch - pitch) > v.ScaleDecimal * DIMENSION_MATCH_TOLERANCE_M Then
+                Exit Do
+            End If
+            lastIndex = lastIndex + 1
+        Loop
+        Set first = coordinates(keys(i))
+        Set last = coordinates(keys(lastIndex))
+        Set plan = MakeCoordinateRequest(v, first, last, axis, detail, lastIndex - i, pitch, i = LBound(keys) And lastIndex = UBound(keys), False)
+        requests.Add plan
+        i = lastIndex
+    Loop
+    Set AdjacentCoordinateRequests = requests
+End Function
+
+Private Function UnionDetailBounds(ByVal a As Variant, ByVal b As Variant) As Variant
+    UnionDetailBounds = Array(MinD(a(0), b(0)), MinD(a(1), b(1)), -MinD(-a(2), -b(2)), -MinD(-a(3), -b(3)))
+End Function
+
+Private Function DetailProfileRadius(ByVal bounds As Variant) As Double
+    DetailProfileRadius = Sqr((bounds(2) - bounds(0)) ^ 2 + (bounds(3) - bounds(1)) ^ 2) / 2 + DETAIL_PROFILE_MARGIN_M
+End Function
+
+Private Function CreateDetailProfile(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal x As Double, ByVal y As Double, ByVal paperRadius As Double) As SldWorks.SketchSegment
+    Dim sketch As SldWorks.Sketch, util As SldWorks.MathUtility, point As SldWorks.MathPoint, coordinates As Variant
+    AsDrawing(d).ActivateView v.Name
+    d.ClearSelection2 True
+    Set sketch = v.GetSketch
+    Set util = sw.GetMathUtility
+    Set point = util.CreatePoint(Array(x, y, 0#))
+    Set point = point.MultiplyTransform(sketch.ModelToSketchTransform)
+    coordinates = point.ArrayData
+    ' Drawing-view sketch coordinates are unscaled and relative to the view origin.
+    Set CreateDetailProfile = d.SketchManager.CreateCircleByRadius(coordinates(0), coordinates(1), 0, paperRadius / v.ScaleDecimal)
+End Function
+
+Private Sub AddSameSheetDimensionDetails(ByVal d As SldWorks.ModelDoc2, ByVal overview As SldWorks.View)
+    Dim requests As New Collection, groups As New Collection, axisRequests As Collection
+    Dim plan As Variant, group As Variant, chosen As Object, keys As Object, remaining As Object
+    Dim bounds As Variant, combined As Variant, cell As Variant, extent As Variant
+    Dim width As Double, height As Double, top As Double, bottom As Double, cellWidth As Double, cellHeight As Double
+    Dim maxRadius As Double, radius As Double, cost As Double, best As Double, detailViewScale As Double
+    Dim i As Long, axis As Long, result As Long, row As Long, column As Long
+    Dim v As SldWorks.View, profile As SldWorks.SketchSegment, x As Double, y As Double
+    Dim number As Long, message As String, covered As Long, expected As Long
+    On Error GoTo Failed
+    Log "GOST DETAILS collecting graphical references"
+    CollectViewCoordinates overview, coordinateSourceX, coordinateSourceY
+    Set coordinateSourceView = overview
+    coordinateSourceOrigin = ViewOrigin(overview)
+    coordinateSourceScale = overview.ScaleDecimal
+    For axis = 0 To 1
+        Log "GOST DETAILS planning axis=" & axis
+        If axis = 0 Then
+            Set axisRequests = LocalDatumRequests(overview, coordinateSourceX, axis)
+        Else
+            Set axisRequests = LocalDatumRequests(overview, coordinateSourceY, axis)
+        End If
+        For Each plan In axisRequests
+            requests.Add plan
+            expected = expected + CLng(plan("count"))
+        Next plan
+    Next axis
+    Set coordinateAssignedRequests = requests
+    Log "GOST LOCAL coverage x=" & coordinateSourceX.Count & "; y=" & coordinateSourceY.Count & "; graph edges=" & requests.Count
+    If FitFlatDimensionLayout(d, overview) Then
+        result = OverallDimensions(d, overview, True)
+        DimensionFeatures d, overview, True
+        ValidateLocalDatumCoverage overview, requests
+        Set coordinateSelection = Nothing
+        Set coordinateSourceView = Nothing
+        Set coordinateAssignedRequests = Nothing
+        coordinateRegion = Empty
+        Exit Sub
+    End If
+    width = CoordinateRegionEdge(2) - CoordinateRegionEdge(0)
+    bottom = CoordinateRegionEdge(1)
+    top = CoordinateRegionEdge(3) - DETAIL_OVERVIEW_HEIGHT_M
+    cellWidth = (width - (DETAIL_GRID_COLUMNS - 1) * DETAIL_CELL_GAP_M) / DETAIL_GRID_COLUMNS
+    cellHeight = (top - bottom - (DETAIL_GRID_ROWS - 1) * DETAIL_CELL_GAP_M) / DETAIL_GRID_ROWS
+    maxRadius = MinD(cellWidth - DETAIL_DIMENSION_BAND_M * 2, cellHeight - DETAIL_DIMENSION_BAND_M * 2) / (DETAIL_MIN_ZOOM_FACTOR * 2)
+    Set remaining = CreateObject("Scripting.Dictionary")
+    For Each plan In requests
+        Set chosen = Nothing
+        bounds = plan("bounds")
+        radius = DetailProfileRadius(bounds)
+        If CDbl(plan("span")) < DETAIL_TRIGGER_SPAN_M And radius <= maxRadius Then
+            best = SEARCH_INITIAL_LIMIT
+            For Each group In groups
+                If CLng(group("count")) < DETAIL_MAX_INTERVALS Then
+                    combined = UnionDetailBounds(group("bounds"), bounds)
+                    cost = DetailProfileRadius(combined)
+                    If cost <= maxRadius And cost < best Then
+                        Set chosen = group
+                        best = cost
+                    End If
+                End If
+            Next group
+            If chosen Is Nothing And groups.Count < DETAIL_GRID_COLUMNS * DETAIL_GRID_ROWS Then
+                Set chosen = CreateObject("Scripting.Dictionary")
+                chosen.Add "bounds", bounds
+                Set keys = CreateObject("Scripting.Dictionary")
+                chosen.Add "keys", keys
+                chosen.Add "count", 0
+                groups.Add chosen
+            End If
+        End If
+        If chosen Is Nothing Then
+            remaining.Add CStr(plan("key")), True
+        Else
+            chosen("bounds") = UnionDetailBounds(chosen("bounds"), bounds)
+            Set keys = chosen("keys")
+            keys.Add CStr(plan("key")), True
+            chosen("count") = CLng(chosen("count")) + 1
+        End If
+    Next plan
+    Log "GOST DETAILS planned=" & groups.Count & "; overview intervals=" & remaining.Count & "; total covered intervals=" & expected
+    If groups.Count = 0 Then
+        Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "No compact enlarged detail can contain both references of the crowded intervals on this paper format."
+    End If
+    coordinateRegion = Array(CoordinateRegionEdge(0), top + DETAIL_CELL_GAP_M, CoordinateRegionEdge(2), sheetHeight - COORDINATE_AXIS_TOP_MARGIN_M)
+    Set coordinateSelection = remaining
+    bounds = ProjectedFlatBounds(overview)
+    detailViewScale = StandardScale(overview.ScaleDecimal * MinD((width - COORDINATE_BASE_OFFSET_M * 2) / (bounds(2) - bounds(0)), (DETAIL_OVERVIEW_HEIGHT_M - COORDINATE_BASE_OFFSET_M * 2) / (bounds(3) - bounds(1))))
+    overview.ScaleDecimal = MinD(coordinateSourceScale, detailViewScale)
+    CenterView overview, (coordinateRegion(0) + coordinateRegion(2)) / 2, (coordinateRegion(1) + coordinateRegion(3)) / 2
+    d.ForceRebuild3 False
+    result = CoordinateDimensions(d, overview, True, True)
+    ' Validate every view before creating any dimensions. A failed layout never drops a request.
+    For i = 1 To groups.Count
+        Set group = groups(i)
+        column = (i - 1) Mod DETAIL_GRID_COLUMNS
+        row = (i - 1) \ DETAIL_GRID_COLUMNS
+        x = COORDINATE_LEFT_LIMIT_M + column * (cellWidth + DETAIL_CELL_GAP_M)
+        y = top - row * (cellHeight + DETAIL_CELL_GAP_M)
+        cell = Array(x, y - cellHeight, x + cellWidth, y)
+        bounds = group("bounds")
+        radius = DetailProfileRadius(bounds)
+        detailViewScale = StandardScale(coordinateSourceScale * MinD(cellWidth - DETAIL_DIMENSION_BAND_M * 2, cellHeight - DETAIL_DIMENSION_BAND_M * 2) / (radius * 2))
+        x = DetailCoordinate((bounds(0) + bounds(2)) / 2, 0, overview)
+        y = DetailCoordinate((bounds(1) + bounds(3)) / 2, 1, overview)
+        Set profile = CreateDetailProfile(d, overview, x, y, radius * overview.ScaleDecimal / coordinateSourceScale)
+        Set v = AsDrawing(d).CreateDetailViewAt4((cell(0) + cell(2)) / 2, (cell(1) + cell(3)) / 2, 0, SW_DETAIL_STANDARD, detailViewScale, 1, Chr$(DETAIL_FIRST_LABEL_CODE + i - 1), SW_DETAIL_CIRCLE, True, False, False, SW_DETAIL_OUTLINE_INTENSITY)
+        If v Is Nothing Then
+            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Cannot create a native enlarged detail view."
+        End If
+        v.UseParentScale = False
+        v.ScaleDecimal = detailViewScale
+        d.ForceRebuild3 False
+        CenterView v, (cell(0) + cell(2)) / 2, (cell(1) + cell(3)) / 2
+        group.Add "view", v
+        group.Add "region", cell
+        coordinateRegion = cell
+        Set coordinateSelection = group("keys")
+        result = CoordinateDimensions(d, v, True, True)
+        Log "GOST DETAIL " & v.Name & "; scale=" & detailViewScale & "; intervals=" & coordinateSelection.Count
+    Next i
+    coordinateRegion = Array(COORDINATE_LEFT_LIMIT_M, top + DETAIL_CELL_GAP_M, sheetWidth - COORDINATE_AXIS_RIGHT_MARGIN_M, sheetHeight - COORDINATE_AXIS_TOP_MARGIN_M)
+    Set coordinateSelection = remaining
+    result = OverallDimensions(d, overview)
+    result = CoordinateDimensions(d, overview, True)
+    DimensionFeatures d, overview, True, False
+    For Each group In groups
+        Set v = group("view")
+        coordinateRegion = group("region")
+        Set coordinateSelection = group("keys")
+        result = CoordinateDimensions(d, v, True)
+        DimensionFeatures d, v, True, False
+    Next group
+    For Each plan In requests
+        If Not dimensionKeys.Exists(CStr(plan("key"))) Then
+            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "An assigned interval is missing from the completed graphical layout."
+        End If
+        covered = covered + CLng(plan("count"))
+    Next plan
+    Log "GOST DETAIL COVERAGE expected=" & expected & "; covered=" & covered & "; sheets added=0"
+    ValidateLocalDatumCoverage overview, requests
+    Set coordinateSelection = Nothing
+    Set coordinateSourceView = Nothing
+    Set coordinateAssignedRequests = Nothing
+    coordinateRegion = Empty
+    Exit Sub
+Failed:
+    number = Err.Number
+    message = Err.Description
+    Set coordinateSelection = Nothing
+    Set coordinateSourceView = Nothing
+    Set coordinateAssignedRequests = Nothing
+    coordinateRegion = Empty
+    Err.Raise number, "AddSameSheetDimensionDetails", "Same-sheet enlarged layout: " & message & " Select a larger paper format if both references cannot fit in a local detail."
+End Sub
+
+Private Function FitFlatDimensionLayout(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View) As Boolean
+    Dim bounds As Variant, position As Variant, result As Long, number As Long, message As String, attempt As Long, initialScale As Double
+    initialScale = v.ScaleDecimal
+    Do
+        attempt = attempt + 1
+        d.ForceRebuild3 False
+        bounds = ProjectedFlatBounds(v)
+        position = v.Position
+        position(0) = position(0) + (sheetWidth + DETAIL_CENTER_X_BIAS_M) / 2 - (bounds(OUTLINE_LEFT_INDEX) + bounds(OUTLINE_RIGHT_INDEX)) / 2
+        position(1) = position(1) + (COORDINATE_BOTTOM_LIMIT_M + sheetHeight - COORDINATE_AXIS_TOP_MARGIN_M) / 2 - (bounds(OUTLINE_BOTTOM_INDEX) + bounds(OUTLINE_TOP_INDEX)) / 2
+        v.Position = position
+        d.ForceRebuild3 False
+        On Error Resume Next
+        result = CoordinateDimensions(d, v, True, True)
+        number = Err.Number
+        message = Err.Description
+        Err.Clear
+        On Error GoTo 0
+        If number = 0 Then
+            Log "DIMENSION layout scale=" & v.ScaleDecimal & "; row pitch=" & COORDINATE_LANE_PITCH_M * MILLIMETRES_PER_METRE & " mm; minimum outside offset=" & GOST_OBJECT_OFFSET_M * MILLIMETRES_PER_METRE & " mm; strict=" & Setting("StrictDimensionLayout", "0")
+            FitFlatDimensionLayout = True
+            Exit Function
+        End If
+        If number <> vbObjectError + ERR_DIMENSION_LAYOUT Then
+            Err.Raise number, "FitFlatDimensionLayout", message
+        End If
+        If attempt >= DIMENSION_LAYOUT_SCALE_ATTEMPTS Or v.ScaleDecimal <= SCALE_1_TO_1000 Then
+            Log "GOST overview requires same-sheet enlarged details: " & message
+            v.ScaleDecimal = initialScale
+            d.ForceRebuild3 False
+            Exit Function
+        End If
+        Log "GOST layout retry scale=" & v.ScaleDecimal & ": " & message
+        v.ScaleDecimal = StandardScale(v.ScaleDecimal * DIMENSION_LAYOUT_RETRY_SCALE_FACTOR)
+    Loop
+End Function
 
 Private Sub WriteDimensionCoverage(ByVal d As SldWorks.ModelDoc2, ByVal outName As String)
     Dim names As Variant, name As Variant, v As SldWorks.View, stream As Object, path As String, temp As String
@@ -2889,17 +3675,16 @@ Private Sub WriteDimensionCoverage(ByVal d As SldWorks.ModelDoc2, ByVal outName 
 End Sub
 ' Native graphical dimensions with outside routing and collision-free text bands.
 ' Circle centers participate as real circular edges, never as loose sketch points.
-Private Function CoordinateDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal detail As Boolean) As Long
-    Dim xs As Object, ys As Object, comps As Variant, ci As Variant, edges As Variant, ei As Variant
+Private Sub CollectViewCoordinates(ByVal v As SldWorks.View, ByRef xs As Object, ByRef ys As Object)
+    Dim comps As Variant, ci As Variant, edges As Variant, ei As Variant
     Dim edge As SldWorks.Edge, curve As SldWorks.Curve, vertex As SldWorks.Vertex, util As SldWorks.MathUtility
     Dim point As SldWorks.MathPoint, cp As Variant, p As Variant, q As Variant, a(2) As Double, endpoint As Long
     Dim normal As SldWorks.MathVector, radius As Double, fullCircle As Boolean
-    On Error GoTo Failed
     Set xs = CreateObject("Scripting.Dictionary"): Set ys = CreateObject("Scripting.Dictionary")
     Set util = sw.GetMathUtility
     comps = v.GetVisibleComponents
     If IsEmpty(comps) Then
-        Exit Function
+        Exit Sub
     End If
     For Each ci In comps
         edges = v.GetVisibleEntities2(ci, SW_VISIBLE_ENTITY_EDGE)
@@ -2948,6 +3733,17 @@ Private Function CoordinateDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As 
             Next ei
         End If
     Next ci
+End Sub
+
+Private Function CoordinateDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal detail As Boolean, Optional ByVal layoutOnly As Boolean = False) As Long
+    Dim xs As Object, ys As Object
+    On Error GoTo Failed
+    If coordinateSourceView Is Nothing Then
+        CollectViewCoordinates v, xs, ys
+    Else
+        Set xs = TransformCoordinates(coordinateSourceX, coordinateSourceView, v, 0)
+        Set ys = TransformCoordinates(coordinateSourceY, coordinateSourceView, v, 1)
+    End If
     Dim geometryBounds As Variant, key As Variant, record As Object, xmin As Double, xmax As Double, ymin As Double, ymax As Double
     xmin = SEARCH_INITIAL_LIMIT: xmax = -SEARCH_INITIAL_LIMIT: ymin = SEARCH_INITIAL_LIMIT: ymax = -SEARCH_INITIAL_LIMIT
     For Each key In xs.Keys
@@ -2962,11 +3758,19 @@ Private Function CoordinateDimensions(ByVal d As SldWorks.ModelDoc2, ByVal v As 
     Next key
     geometryBounds = Array(xmin, ymin, xmax, ymax)
     If detail Then
-        geometryBounds = ProjectedFlatBounds(v)
+        If coordinateSourceView Is Nothing Then
+            geometryBounds = ProjectedFlatBounds(v)
+        Else
+            geometryBounds = v.GetOutline
+        End If
     End If
-    routingXMinimum = CONTENT_LEFT_M
-    routingXMaximum = sheetWidth - COORDINATE_RIGHT_MARGIN_M
+    routingXMinimum = CoordinateRegionEdge(0)
+    routingXMaximum = CoordinateRegionEdge(2)
     CoordinateAxis d, v, ys, 1, geometryBounds, detail, True
+    If layoutOnly Then
+        CoordinateAxis d, v, xs, 0, geometryBounds, detail, True
+        Exit Function
+    End If
     CoordinateDimensions = CoordinateAxis(d, v, xs, 0, geometryBounds, detail) + CoordinateAxis(d, v, ys, 1, geometryBounds, detail)
     Log "COORDINATES " & v.Name & " x=" & xs.Count & " y=" & ys.Count & " dimensions=" & CoordinateDimensions
     Exit Function
@@ -2978,12 +3782,14 @@ Failed:
 End Function
 
 Private Sub AddCoordinate(ByVal coordinates As Object, ByVal entity As Object, ByVal value As Double, ByVal viewScale As Double, ByVal perpendicular As Double)
-    Dim key As String, record As Object, candidates As Collection
+    Dim key As String, record As Object, candidates As Collection, positions As Collection
     key = CStr(Round(value / viewScale, COORDINATE_KEY_DECIMALS))
     If coordinates.Exists(key) Then
         Set record = coordinates(key)
         Set candidates = record("candidates")
         candidates.Add entity
+        Set positions = record("candidatePositions")
+        positions.Add perpendicular
         If perpendicular < CDbl(record("low")) - MIN_PROJECTED_EXTENT_M Then
             record("low") = perpendicular
             Set record("lowEntity") = entity
@@ -3002,6 +3808,9 @@ Private Sub AddCoordinate(ByVal coordinates As Object, ByVal entity As Object, B
         Set candidates = New Collection
         candidates.Add entity
         record.Add "candidates", candidates
+        Set positions = New Collection
+        positions.Add perpendicular
+        record.Add "candidatePositions", positions
         coordinates.Add key, record
     End If
 End Sub
@@ -3052,7 +3861,8 @@ Private Function CoordinateIntervalKey(ByVal v As SldWorks.View, ByVal axis As L
     CoordinateIntervalKey = "coordinate|" & CStr(detail) & "|" & PhysicalAxisKey(v, axis) & "|" & Format$(MinD(startValue, endValue), GEOMETRY_KEY_FORMAT) & "|" & Format$(-MinD(-startValue, -endValue), GEOMETRY_KEY_FORMAT)
 End Function
 
-Private Function RequiredCoordinateLanes(ByVal plans As Collection, ByVal side As Long, ByVal axisMinimum As Double, ByVal axisMaximum As Double) As Long
+
+Private Function CompatibleRequiredCoordinateLanes(ByVal plans As Collection, ByVal side As Long, ByVal axisMinimum As Double, ByVal axisMaximum As Double) As Long
     Dim plan As Variant, count As Long, total As Double, lanes As Long, lane As Long
     Dim index As Long, used As Double, fits As Boolean
     If axisMaximum - axisMinimum < MIN_PROJECTED_EXTENT_M Then
@@ -3089,19 +3899,18 @@ Private Function RequiredCoordinateLanes(ByVal plans As Collection, ByVal side A
             End If
         Next lane
         If fits Then
-            RequiredCoordinateLanes = lanes
+            CompatibleRequiredCoordinateLanes = lanes
             Exit Function
         End If
         lanes = lanes + 1
     Loop
 End Function
-
-Private Sub BalanceCoordinateSides(ByVal plans As Collection, ByVal axisMinimum As Double, ByVal axisMaximum As Double, ByVal lowLanes As Long, ByVal highLanes As Long)
+Private Sub CompatibleBalanceCoordinateSides(ByVal plans As Collection, ByVal axisMinimum As Double, ByVal axisMaximum As Double, ByVal lowLanes As Long, ByVal highLanes As Long)
     Dim lowRequired As Long, highRequired As Long, sourceSide As Long, targetSide As Long
     Dim targetCapacity As Long, plan As Variant, best As Object, cost As Double, bestCost As Double
     Do
-        lowRequired = RequiredCoordinateLanes(plans, 0, axisMinimum, axisMaximum)
-        highRequired = RequiredCoordinateLanes(plans, 1, axisMinimum, axisMaximum)
+        lowRequired = CompatibleRequiredCoordinateLanes(plans, 0, axisMinimum, axisMaximum)
+        highRequired = CompatibleRequiredCoordinateLanes(plans, 1, axisMinimum, axisMaximum)
         If lowRequired <= lowLanes And highRequired <= highLanes Then
             Exit Sub
         End If
@@ -3120,7 +3929,7 @@ Private Sub BalanceCoordinateSides(ByVal plans As Collection, ByVal axisMinimum 
         For Each plan In plans
             If CLng(plan("side")) = sourceSide Then
                 plan("side") = targetSide
-                If RequiredCoordinateLanes(plans, targetSide, axisMinimum, axisMaximum) <= targetCapacity Then
+                If CompatibleRequiredCoordinateLanes(plans, targetSide, axisMinimum, axisMaximum) <= targetCapacity Then
                     If targetSide = 0 Then
                         cost = CDbl(plan("lowCost")) - CDbl(plan("highCost"))
                     Else
@@ -3140,8 +3949,7 @@ Private Sub BalanceCoordinateSides(ByVal plans As Collection, ByVal axisMinimum 
         best("side") = targetSide
     Loop
 End Sub
-
-Private Sub PackCoordinateSide(ByVal plans As Collection, ByVal side As Long, ByVal axisMinimum As Double, ByVal axisMaximum As Double, ByVal firstLane As Double, ByVal maxLanes As Long, ByVal axis As Long)
+Private Sub CompatiblePackCoordinateSide(ByVal plans As Collection, ByVal side As Long, ByVal axisMinimum As Double, ByVal axisMaximum As Double, ByVal firstLane As Double, ByVal maxLanes As Long, ByVal axis As Long)
     Dim plan As Variant, count As Long, total As Double, lanes As Long, lane As Long
     Dim index As Long, used As Double, fits As Boolean, previous As Double, position As Double, i As Long
     For Each plan In plans
@@ -3190,9 +3998,9 @@ Private Sub PackCoordinateSide(ByVal plans As Collection, ByVal side As Long, By
     Loop
     If axis = 1 Then
         If side = 0 Then
-            firstLane = COORDINATE_LEFT_LIMIT_M + (lanes - 1) * COORDINATE_LANE_PITCH_M
+            firstLane = CoordinateRegionEdge(0) + (lanes - 1) * COORDINATE_LANE_PITCH_M
         Else
-            firstLane = sheetWidth - COORDINATE_AXIS_RIGHT_MARGIN_M - (lanes - 1) * COORDINATE_LANE_PITCH_M
+            firstLane = CoordinateRegionEdge(2) - (lanes - 1) * COORDINATE_LANE_PITCH_M
         End If
     End If
     For lane = 0 To lanes - 1
@@ -3225,6 +4033,170 @@ Private Sub PackCoordinateSide(ByVal plans As Collection, ByVal side As Long, By
     Next lane
 End Sub
 
+Private Sub AddForbiddenCoordinate(ByVal coordinates As Object, ByVal value As Double)
+    Dim record As Object, key As String
+    key = CStr(value)
+    If Not coordinates.Exists(key) Then
+        Set record = CreateObject("Scripting.Dictionary")
+        record.Add "coordinate", value
+        coordinates.Add key, record
+    End If
+End Sub
+
+Private Function TryCoordinatePlanRow(ByVal plans As Collection, ByVal plan As Object, ByVal side As Long, ByVal lane As Long, ByVal axisMinimum As Double, ByVal axisMaximum As Double, ByRef center As Double, ByRef start As Double, ByRef finish As Double) As Boolean
+    Dim other As Variant, forbidden As Object, minimum As Double, maximum As Double
+    Dim first As Double, last As Double, padding As Double, innerStart As Double, innerEnd As Double, keys As Variant
+    first = CDbl(plan("firstCoordinate"))
+    last = CDbl(plan("lastCoordinate"))
+    padding = CoordinateMarkerPadding(CDbl(plan("span")), CDbl(plan("width")))
+    start = first - padding
+    finish = last + padding
+    minimum = axisMinimum
+    maximum = axisMaximum
+    If start < minimum Or finish > maximum Then
+        Exit Function
+    End If
+    Set forbidden = CreateObject("Scripting.Dictionary")
+    AddForbiddenCoordinate forbidden, first
+    AddForbiddenCoordinate forbidden, last
+    For Each other In plans
+        If CLng(other("lane")) >= 0 Then
+            If CLng(other("side")) = side Then
+                If CLng(other("lane")) = lane Then
+                    If CDbl(other("lineEnd")) < start Then
+                        minimum = -MinD(-minimum, -CDbl(other("lineEnd")) - DIMENSION_GEOMETRY_GAP_M)
+                    ElseIf CDbl(other("lineStart")) > finish Then
+                        maximum = MinD(maximum, CDbl(other("lineStart")) - DIMENSION_GEOMETRY_GAP_M)
+                    Else
+                        Exit Function
+                    End If
+                End If
+                If CLng(other("lane")) >= lane Then
+                    AddForbiddenCoordinate forbidden, CDbl(other("firstCoordinate"))
+                    AddForbiddenCoordinate forbidden, CDbl(other("lastCoordinate"))
+                Else
+                    ' New outer extension lines must not cross an existing inner number.
+                    innerStart = CDbl(other("desired")) - CDbl(other("width")) / 2 - DIMENSION_GEOMETRY_GAP_M
+                    innerEnd = CDbl(other("desired")) + CDbl(other("width")) / 2 + DIMENSION_GEOMETRY_GAP_M
+                    If (first >= innerStart And first <= innerEnd) Or (last >= innerStart And last <= innerEnd) Then
+                        Exit Function
+                    End If
+                End If
+            End If
+        End If
+    Next other
+    If start < minimum Or finish > maximum Or maximum - minimum < CDbl(plan("width")) Then
+        Exit Function
+    End If
+    keys = SortedCoordinateKeys(forbidden)
+    If Not FindCoordinateTextCenter(forbidden, keys, first, last, CDbl(plan("width")), minimum, maximum, center) Then
+        Exit Function
+    End If
+    start = MinD(start, center - CDbl(plan("width")) / 2 - COORDINATE_LABEL_GAP_M)
+    finish = -MinD(-finish, -center - CDbl(plan("width")) / 2 - COORDINATE_LABEL_GAP_M)
+    TryCoordinatePlanRow = start >= axisMinimum And finish <= axisMaximum
+End Function
+
+Private Sub BalanceCoordinateSides(ByVal plans As Collection, ByVal axisMinimum As Double, ByVal axisMaximum As Double, ByVal lowLanes As Long, ByVal highLanes As Long)
+    Dim plan As Variant, row As Long, side As Long, capacity As Long, chosen As Long, chosenSide As Long
+    Dim center As Double, start As Double, finish As Double, best As Double, score As Double
+    Dim chosenCenter As Double, chosenStart As Double, chosenEnd As Double, minimumLane As Long
+    For Each plan In plans
+        plan("lane") = -1
+    Next plan
+    For Each plan In plans
+        chosen = -1
+        best = SEARCH_INITIAL_LIMIT
+        For side = 0 To 1
+            capacity = lowLanes
+            If side = 1 Then
+                capacity = highLanes
+            End If
+            For row = capacity - 1 To 0 Step -1
+                If TryCoordinatePlanRow(plans, plan, side, row, axisMinimum, axisMaximum, center, start, finish) Then
+                    score = CDbl(plan("lowCost"))
+                    If side = 1 Then
+                        score = CDbl(plan("highCost"))
+                    End If
+                    score = score + (capacity - 1 - row) * COORDINATE_ROW_PRIORITY_M + Abs(center - CDbl(plan("geometricCenter"))) * COORDINATE_LANE_PENALTY_M
+                    If score < best Then
+                        chosen = row
+                        chosenSide = side
+                        chosenCenter = center
+                        chosenStart = start
+                        chosenEnd = finish
+                        best = score
+                    End If
+                End If
+            Next row
+        Next side
+        If chosen < 0 Then
+            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Dimension arrows and numbers cannot fit without crossing extension lines at 7 mm row spacing."
+        End If
+        plan("side") = chosenSide
+        plan("lane") = chosen
+        plan("desired") = chosenCenter
+        plan("lineStart") = chosenStart
+        plan("lineEnd") = chosenEnd
+    Next plan
+    For side = 0 To 1
+        minimumLane = COORDINATE_LAST_LANE + 1
+        For Each plan In plans
+            If CLng(plan("side")) = side Then
+                If CLng(plan("lane")) < minimumLane Then
+                    minimumLane = CLng(plan("lane"))
+                End If
+            End If
+        Next plan
+        For Each plan In plans
+            If CLng(plan("side")) = side Then
+                plan("lane") = CLng(plan("lane")) - minimumLane
+            End If
+        Next plan
+    Next side
+End Sub
+
+Private Sub PackCoordinateSide(ByVal plans As Collection, ByVal side As Long, ByVal axisMinimum As Double, ByVal axisMaximum As Double, ByVal firstLane As Double, ByVal maxLanes As Long, ByVal axis As Long)
+    Dim plan As Variant, count As Long, lanes As Long, lane As Long
+    For Each plan In plans
+        If CLng(plan("side")) = side Then
+            count = count + 1
+            If CLng(plan("lane")) + 1 > lanes Then
+                lanes = CLng(plan("lane")) + 1
+            End If
+        End If
+    Next plan
+    If count = 0 Then
+        Exit Sub
+    End If
+    If lanes > maxLanes Then
+        Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Dimension row assignment exceeds its free band."
+    End If
+    If axis = 1 Then
+        If side = 0 Then
+            firstLane = CoordinateRegionEdge(0) + (lanes - 1) * COORDINATE_LANE_PITCH_M
+        Else
+            firstLane = CoordinateRegionEdge(2) - (lanes - 1) * COORDINATE_LANE_PITCH_M
+        End If
+    End If
+    For Each plan In plans
+        If CLng(plan("side")) = side Then
+            lane = CLng(plan("lane"))
+            plan("center") = CDbl(plan("desired"))
+            plan("location") = firstLane + (side * 2 - 1) * lane * COORDINATE_LANE_PITCH_M
+        End If
+    Next plan
+End Sub
+
+Private Sub ResetCoordinatePlans(ByVal plans As Collection)
+    Dim plan As Variant
+    For Each plan In plans
+        plan("lane") = -1
+        plan("desired") = CDbl(plan("geometricCenter"))
+        plan("side") = CLng(plan("preferredSide"))
+    Next plan
+End Sub
+
 Private Function CoordinateAxis(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal coordinates As Object, ByVal axis As Long, ByVal bounds As Variant, ByVal detail As Boolean, Optional ByVal layoutOnly As Boolean = False) As Long
     Dim keys As Variant, i As Long, runEnd As Long, first As Object, last As Object
     Dim plans As Collection, plan As Variant, pitch As Double, nextPitch As Double, span As Double
@@ -3233,11 +4205,22 @@ Private Function CoordinateAxis(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWor
     Dim lowLanes As Long, highLanes As Long, axisMinimum As Double, axisMaximum As Double
     Dim text As String, prefixText As String, overallKey As String, intervalKey As String
     Dim dd As SldWorks.DisplayDimension, dimension As SldWorks.Dimension, annotation As SldWorks.Annotation
-    Dim covered As Long, repeated As Long, grouped As Long
-    If coordinates.Count < COORDINATE_MIN_KEY_COUNT Then
+    Dim layoutError As Long, layoutMessage As String
+    Dim covered As Long, expected As Long, repeated As Long, grouped As Long, padding As Double, textWidth As Double, center As Double
+    If coordinates.Count < COORDINATE_MIN_KEY_COUNT And coordinateAssignedRequests Is Nothing Then
         Exit Function
     End If
+    Dim requests As Collection, request As Variant
     Set plans = New Collection
+    If coordinateAssignedRequests Is Nothing Then
+        Set requests = AdjacentCoordinateRequests(v, coordinates, axis, detail)
+    Else
+        Set requests = AssignedRequestsForView(v, axis)
+        Set coordinates = RequestCoordinates(requests, v.ScaleDecimal)
+    End If
+    If coordinates.Count < 2 Then
+        Exit Function
+    End If
     keys = SortedCoordinateKeys(coordinates)
     If axis = 0 Then
         lowEdge = bounds(OUTLINE_BOTTOM_INDEX)
@@ -3247,17 +4230,17 @@ Private Function CoordinateAxis(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWor
     Else
         lowEdge = bounds(OUTLINE_LEFT_INDEX)
         highEdge = bounds(OUTLINE_RIGHT_INDEX)
-        axisMinimum = COORDINATE_BOTTOM_LIMIT_M
-        axisMaximum = sheetHeight - COORDINATE_AXIS_TOP_MARGIN_M
+        axisMinimum = CoordinateRegionEdge(1)
+        axisMaximum = CoordinateRegionEdge(3)
     End If
     lowLane = lowEdge - COORDINATE_BASE_OFFSET_M
     highLane = highEdge + COORDINATE_BASE_OFFSET_M
     If axis = 0 Then
-        lowLanes = Int((lowLane - COORDINATE_BOTTOM_LIMIT_M) / COORDINATE_LANE_PITCH_M) + 1
-        highLanes = Int((sheetHeight - COORDINATE_TOP_MARGIN_M - highLane) / COORDINATE_LANE_PITCH_M) + 1
+        lowLanes = Int((lowLane - CoordinateRegionEdge(1)) / COORDINATE_LANE_PITCH_M) + 1
+        highLanes = Int((CoordinateRegionEdge(3) - highLane) / COORDINATE_LANE_PITCH_M) + 1
     Else
-        lowLanes = Int((lowLane - COORDINATE_LEFT_LIMIT_M) / COORDINATE_LANE_PITCH_M) + 1
-        highLanes = Int((sheetWidth - COORDINATE_AXIS_RIGHT_MARGIN_M - highLane) / COORDINATE_LANE_PITCH_M) + 1
+        lowLanes = Int((lowLane - CoordinateRegionEdge(0)) / COORDINATE_LANE_PITCH_M) + 1
+        highLanes = Int((CoordinateRegionEdge(2) - highLane) / COORDINATE_LANE_PITCH_M) + 1
     End If
     If lowLanes < 0 Then
         lowLanes = 0
@@ -3271,36 +4254,32 @@ Private Function CoordinateAxis(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWor
     If highLanes > COORDINATE_LAST_LANE + 1 Then
         highLanes = COORDINATE_LAST_LANE + 1
     End If
-    i = LBound(keys)
-    Do While i < UBound(keys)
-        runEnd = i + 1
-        Set first = coordinates(keys(i))
-        Set last = coordinates(keys(runEnd))
-        pitch = CDbl(last("coordinate")) - CDbl(first("coordinate"))
-        Do While runEnd < UBound(keys)
-            nextPitch = CDbl(coordinates(keys(runEnd + 1))("coordinate")) - CDbl(coordinates(keys(runEnd))("coordinate"))
-            If Abs(nextPitch - pitch) > v.ScaleDecimal * DIMENSION_MATCH_TOLERANCE_M Then
-                Exit Do
-            End If
-            runEnd = runEnd + 1
-        Loop
-        Set last = coordinates(keys(runEnd))
+    For Each request In requests
+        Set first = request("firstRecord")
+        Set last = request("lastRecord")
         span = CDbl(last("coordinate")) - CDbl(first("coordinate"))
-        intervalKey = CoordinateIntervalKey(v, axis, CDbl(first("coordinate")), CDbl(last("coordinate")), detail)
+        pitch = CDbl(request("pitch"))
+        intervalKey = CStr(request("key"))
         prefixText = ""
+        If Not coordinateSelection Is Nothing Then
+            If Not coordinateSelection.Exists(intervalKey) Then
+                GoTo NextRun
+            End If
+        End If
+        expected = expected + CLng(request("count"))
         If dimensionKeys.Exists(intervalKey) Then
-            covered = covered + runEnd - i
+            covered = covered + CLng(request("count"))
             repeated = repeated + 1
             GoTo NextRun
         End If
-        If runEnd - i > 1 Then
-            prefixText = CStr(runEnd - i) & "x " & Format$(pitch / v.ScaleDecimal * MILLIMETRES_PER_METRE, DIMENSION_NUMBER_FORMAT) & " = "
+        If CLng(request("count")) > 1 Then
+            prefixText = CStr(request("count")) & "x " & DimensionLabel(pitch / v.ScaleDecimal * MILLIMETRES_PER_METRE) & " = "
             overallKey = "overall|" & CStr(detail) & "|" & PhysicalAxisKey(v, axis) & "|" & Format$(span / v.ScaleDecimal, GEOMETRY_KEY_FORMAT)
-            If i = LBound(keys) And runEnd = UBound(keys) And dimensionKeys.Exists(overallKey) Then
+            If CBool(request("fullRange")) And dimensionKeys.Exists(overallKey) Then
                 Set dd = dimensionKeys(overallKey)
                 dd.SetText SW_DIMENSION_TEXT_PREFIX, prefixText & dd.GetText(SW_DIMENSION_TEXT_PREFIX)
                 dimensionKeys.Add intervalKey, True
-                covered = covered + runEnd - i
+                covered = covered + CLng(request("count"))
                 grouped = grouped + 1
                 GoTo NextRun
             End If
@@ -3313,6 +4292,7 @@ Private Function CoordinateAxis(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWor
         End If
         Set plan = CreateObject("Scripting.Dictionary")
         plan.Add "side", side
+        plan.Add "preferredSide", side
         plan.Add "lowCost", CDbl(first("low")) + CDbl(last("low")) - lowEdge * 2
         plan.Add "highCost", highEdge * 2 - CDbl(first("high")) - CDbl(last("high"))
         plan.Add "firstRecord", first
@@ -3326,29 +4306,61 @@ Private Function CoordinateAxis(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWor
             plan.Add "last", last("highEntity")
             highCount = highCount + 1
         End If
-        text = prefixText & Format$(span / v.ScaleDecimal * MILLIMETRES_PER_METRE, DIMENSION_NUMBER_FORMAT)
-        plan.Add "width", Len(text) * COORDINATE_GLYPH_WIDTH_M + COORDINATE_LABEL_PADDING_M
-        plan.Add "desired", (CDbl(first("coordinate")) + CDbl(last("coordinate"))) / 2
+        text = prefixText & DimensionLabel(span / v.ScaleDecimal * MILLIMETRES_PER_METRE)
+        textWidth = Len(text) * COORDINATE_GLYPH_WIDTH_M + COORDINATE_LABEL_PADDING_M
+        center = (CDbl(first("coordinate")) + CDbl(last("coordinate"))) / 2
+        padding = CoordinateMarkerPadding(span, textWidth)
+        plan.Add "width", textWidth
+        plan.Add "desired", center
+        plan.Add "geometricCenter", center
+        plan.Add "firstCoordinate", CDbl(first("coordinate"))
+        plan.Add "lastCoordinate", CDbl(last("coordinate"))
+        plan.Add "lineStart", MinD(CDbl(first("coordinate")) - padding, center - textWidth / 2 - COORDINATE_LABEL_GAP_M)
+        plan.Add "lineEnd", -MinD(-CDbl(last("coordinate")) - padding, -center - textWidth / 2 - COORDINATE_LABEL_GAP_M)
         plan.Add "span", span
         plan.Add "prefix", prefixText
         plan.Add "key", intervalKey
-        plan.Add "count", runEnd - i
+        plan.Add "count", CLng(request("count"))
         plan.Add "lane", -1
+        If Not coordinateSourceView Is Nothing Then
+            SetCompactPlanReferences plan
+        End If
         plans.Add plan
 NextRun:
-        i = runEnd
-    Loop
+    Next request
+    If Not coordinateAssignedRequests Is Nothing Then
+        Set plans = SortCoordinatePlans(plans)
+    End If
+    On Error Resume Next
     BalanceCoordinateSides plans, axisMinimum, axisMaximum, lowLanes, highLanes
-    PackCoordinateSide plans, 0, axisMinimum, axisMaximum, lowLane, lowLanes, axis
-    PackCoordinateSide plans, 1, axisMinimum, axisMaximum, highLane, highLanes, axis
+    layoutError = Err.Number
+    layoutMessage = Err.Description
+    Err.Clear
+    On Error GoTo 0
+    If layoutError = 0 Then
+        PackCoordinateSide plans, 0, axisMinimum, axisMaximum, lowLane, lowLanes, axis
+        PackCoordinateSide plans, 1, axisMinimum, axisMaximum, highLane, highLanes, axis
+    ElseIf Setting("StrictDimensionLayout", "0") = "1" Then
+        Err.Raise layoutError, "CoordinateAxis", layoutMessage
+    Else
+        ResetCoordinatePlans plans
+        CompatibleBalanceCoordinateSides plans, axisMinimum, axisMaximum, lowLanes, highLanes
+        CompatiblePackCoordinateSide plans, 0, axisMinimum, axisMaximum, lowLane, lowLanes, axis
+        CompatiblePackCoordinateSide plans, 1, axisMinimum, axisMaximum, highLane, highLanes, axis
+        If Not layoutOnly Then
+            Warn "LAYOUT REVIEW " & v.Name & " axis=" & axis & ": arrow geometry follows GOST; complete collision-free placement was not established."
+        End If
+    End If
     If layoutOnly Then
-        For Each plan In plans
-            If CLng(plan("side")) = 0 Then
-                routingXMinimum = -MinD(-routingXMinimum, -(CDbl(plan("location")) + TEXT_HEIGHT_STANDARD_M + COORDINATE_LABEL_GAP_M))
-            Else
-                routingXMaximum = MinD(routingXMaximum, CDbl(plan("location")) - TEXT_HEIGHT_STANDARD_M - COORDINATE_LABEL_GAP_M)
-            End If
-        Next plan
+        If axis = 1 Then
+            For Each plan In plans
+                If CLng(plan("side")) = 0 Then
+                    routingXMinimum = -MinD(-routingXMinimum, -(CDbl(plan("location")) + TEXT_HEIGHT_STANDARD_M + COORDINATE_LABEL_GAP_M))
+                Else
+                    routingXMaximum = MinD(routingXMaximum, CDbl(plan("location")) - TEXT_HEIGHT_STANDARD_M - COORDINATE_LABEL_GAP_M)
+                End If
+            Next plan
+        End If
         Exit Function
     End If
     For Each plan In plans
@@ -3377,12 +4389,15 @@ NextRun:
             Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Graphical dimension measured an unexpected span."
         End If
         dd.CenterText = False
-        dd.SmartWitness = True
-        dd.MaxWitnessLineLength = ROUTED_WITNESS_MAX_LENGTH_M
-        If CDbl(plan("span")) < DIMENSION_ARROW_CLEARANCE_M Then
+        If UseCoordinateDots(CDbl(plan("span"))) Then
+            dd.SetArrowHeadStyle2 False, SW_ARROW_DOT, SW_ARROW_DOT
+        End If
+        ApplyGostDimensionStyle dd
+        If Not UseCoordinateDots(CDbl(plan("span"))) Then
             dd.ArrowSide = SW_DIMENSION_ARROWS_OUTSIDE
-        Else
-            dd.ArrowSide = SW_DIMENSION_ARROWS_INSIDE
+            If CDbl(plan("span")) >= CDbl(plan("width")) + GOST_ARROW_HEAD_LENGTH_M * 2 Then
+                dd.ArrowSide = SW_DIMENSION_ARROWS_INSIDE
+            End If
         End If
         If Len(CStr(plan("prefix"))) > 0 Then
             dd.SetText SW_DIMENSION_TEXT_PREFIX, CStr(plan("prefix")) & dd.GetText(SW_DIMENSION_TEXT_PREFIX)
@@ -3397,7 +4412,7 @@ NextRun:
         covered = covered + CLng(plan("count"))
         CoordinateAxis = CoordinateAxis + 1
     Next plan
-    Log "ROUTING " & v.Name & " axis=" & axis & " intervals=" & (coordinates.Count - 1) & " covered=" & covered & " placed=" & CoordinateAxis & " duplicate=" & repeated & " grouped=" & grouped
+    Log "ROUTING " & v.Name & " axis=" & axis & " intervals=" & expected & " covered=" & covered & " placed=" & CoordinateAxis & " duplicate=" & repeated & " grouped=" & grouped
     d.ClearSelection2 True
 End Function
 

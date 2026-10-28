@@ -70,6 +70,7 @@ Edit `generator.ini` to adjust generation:
 | Setting | Purpose |
 | --- | --- |
 | `AutoDimensions=1` | Add graphical dimension chains and supported feature dimensions |
+| `StrictDimensionLayout=0` | Keep generation compatible with dense models; `1` enables the experimental collision and same-sheet detail layout checks |
 | `ImportModelDimensions=0` | Disable model-dimension import; alternatives are `marked` or `all` |
 | `UpAxis=+Y` | Model up direction; also accepts `-Y`, `+X`, `-X`, `+Z`, or `-Z` |
 | `JobsPerBatch=8` | Maximum job attempts per batch; `0` disables the limit |
@@ -79,6 +80,10 @@ Edit `generator.ini` to adjust generation:
 | `Organization=` | Optional organization text for drawing notes |
 
 Repeated instances of the same file/configuration share one drawing and a quantity. Supported sheet-metal parts include a flat-pattern sheet. All graphical flat dimensions remain together on that sheet. Drawing properties such as `Designation`, `Description`, `Material`, and `Mass` populate the title block. Review manufacturing dimensions, tolerances, datums, and drawing content before release.
+
+Dimension styling uses the supplied GOST 2.307 rules: closed arrowheads with a 2.5 mm head length and a 20 degree angle, a 2 mm extension beyond the dimension line, 7 mm row spacing, and at least 10 mm outside offset from the view. Short chains can use separate clear dots where they fit. Insignificant trailing zeroes are removed without reducing the configured measurement precision.
+
+Arrow geometry alone does not establish compliance of the complete layout. The default mode preserves graphical dimensions when the strict placement solver cannot find a collision-free arrangement. Such views produce `WARN LAYOUT REVIEW` in `run.log` and need review; no review label is added to the drawing itself. The experimental strict mode rejects that layout instead of silently dropping dimensions. It can rebuild interleaved coordinates as local datum graphs and try enlarged views on the same sheet, with checks that every source coordinate remains dimensioned. Dense LeftSide A4 layouts are still a known limitation of this mode. Do not treat its implementation as verified for production release.
 
 ## Output and progress
 
