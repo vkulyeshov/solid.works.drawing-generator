@@ -70,6 +70,7 @@ Edit `generator.ini` to adjust generation:
 | Setting | Purpose |
 | --- | --- |
 | `AutoDimensions=1` | Add graphical dimension chains and supported feature dimensions |
+| `NativeDimensions=0` | Set to `1` to use native Autodimension and Auto Arrange, followed by inclined text leaders and in-frame placement, for ordinary solid parts; currently tested on Matochina4x100 only |
 | `StrictDimensionLayout=0` | Keep generation compatible with dense models; `1` enables the experimental collision and same-sheet detail layout checks |
 | `ImportModelDimensions=0` | Disable model-dimension import; alternatives are `marked` or `all` |
 | `UpAxis=+Y` | Model up direction; also accepts `-Y`, `+X`, `-X`, `+Z`, or `-Z` |
@@ -84,6 +85,8 @@ Repeated instances of the same file/configuration share one drawing and a quanti
 Dimension styling uses the supplied GOST 2.307 rules: closed arrowheads with a 2.5 mm head length and a 20 degree angle, a 2 mm extension beyond the dimension line, 7 mm row spacing, and at least 10 mm outside offset from the view. Short chains can use separate clear dots where they fit. Insignificant trailing zeroes are removed without reducing the configured measurement precision.
 
 Arrow geometry alone does not establish compliance of the complete layout. The default mode preserves graphical dimensions when the strict placement solver cannot find a collision-free arrangement. Such views produce `WARN LAYOUT REVIEW` in `run.log` and need review; no review label is added to the drawing itself. The experimental strict mode rejects that layout instead of silently dropping dimensions. It can rebuild interleaved coordinates as local datum graphs and try enlarged views on the same sheet, with checks that every source coordinate remains dimensioned. Dense LeftSide A4 layouts are still a known limitation of this mode. Do not treat its implementation as verified for production release.
+
+With `NativeDimensions=1`, solid parts use native chain dimensions instead of the custom coordinate chains. After native Auto Arrange, the postprocessor removes repeated physical intervals and dimensions of the same circular/cylindrical geometry. Reflected intervals are grouped only when the selected body's vertices and sampled edge geometry verify the symmetry; equal numbers alone are insufficient. Each dimensioned view has a separate rectangular dimension region. Dimensionless isometric views remain geometry obstacles, and no dimension graphics may cross another view. The upper orthographic row can move together to reserve lower-view space, without changing scales. Readable native labels remain on their dimension lines; conflicting labels use inclined leaders and can use 2.5 mm text when the standard text does not fit. Multi-line hole callouts use 2.5 mm text. Verified mirror planes receive centerlines. Removed dimensions and their retained representatives are recorded in `native-dimension-audit.tsv`; `native-view-regions.tsv` and `native-symmetry-lines.tsv` record the layout boundaries and centerlines. Review manufacturing completeness before release. Assemblies and sheet-metal parts continue to use the existing dimensioning path. This mode is currently tested only on Matochina4x100.
 
 ## Output and progress
 

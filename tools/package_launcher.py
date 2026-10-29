@@ -6,6 +6,7 @@ import zipfile
 sys.dont_write_bytecode = True
 from project_paths import REPOSITORY, BUILD_DIRECTORY, build_path
 from rebuild_native import rebuild
+from vba_sources import DEFAULT_SOURCE
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('output_dir', nargs='?', default=str(BUILD_DIRECTORY), help='Output directory; default: repository build/')
@@ -18,7 +19,7 @@ legacy_dir = output/'Ready'
 if legacy_dir.is_dir() and not bin_dir.exists():
     legacy_dir.rename(bin_dir)
 bin_dir.mkdir(exist_ok=True)
-native = rebuild(base/'generator.bas', bin_dir/'generator.swp')
+native = rebuild(DEFAULT_SOURCE, bin_dir/'generator.swp')
 native.with_suffix('.build.json').replace(output/'generator.build.json')
 # A runtime kit deliberately has no BAS file, so the launcher needs no Python.
 for obsolete in ['generator.bas','generator.utf8.txt','RunDrawings.vbs',

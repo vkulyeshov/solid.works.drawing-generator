@@ -4,6 +4,7 @@ import sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
 from project_paths import work_path
+from vba_sources import source_digest
 import hashlib
 import json
 import os
@@ -76,7 +77,7 @@ assert len(rows)==1 and all(x[10]=='DONE' for x in rows)
 assert pdf.stat().st_size==int(rows[0][14])
 assert (pack/'Drawings'/(rows[0][11]+'.slddrw')).stat().st_size==int(rows[0][13])
 results.append({'test':'checkpoint_commits_both_artifacts','passed':True})
-data={'source_sha256':sha(base/'generator.bas'),
+data={'source_sha256':source_digest(),
       'launcher_sha256':sha(launcher),'checks':results}
 (audit/'incremental-integration.json').write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf8')
 print('Final incremental integration checks passed',flush=True)

@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import unittest
 import zipfile
+from vba_sources import source_digest, source_files
 
 
 class BuildTests(unittest.TestCase):
@@ -58,7 +59,8 @@ class BuildTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='failed_build_', dir=self.root) as folder:
             checkout = Path(folder)
             shutil.copy2(REPOSITORY / 'build.vbs', checkout / 'build.vbs')
-            (checkout / 'generator.bas').write_text("' Unused fixture\n", encoding='ascii')
+            (checkout / 'modules').mkdir()
+            (checkout / 'modules/project.json').write_text('{}', encoding='ascii')
             (checkout / 'tools').mkdir()
             (checkout / 'tools/package_launcher.py').write_text(
                 "import sys\nprint('Injected build failure', flush=True)\nsys.exit(9)\n",
@@ -76,7 +78,9 @@ class BuildTests(unittest.TestCase):
                     'README.md', *('templates/' + p.name for p in (REPOSITORY / 'templates').iterdir())}
         report = json.loads((package / 'generator.build.json').read_text('ascii'))
         digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
-        self.assertEqual(report['source_sha256'], digest(REPOSITORY / 'generator.bas'))
+        self.assertEqual(report['source_sha256'], source_digest())
+        self.assertEqual(report['source_files'], [
+            {'path':str(path.resolve()), 'sha256':digest(path)} for path in source_files()])
         self.assertEqual(report['macro_sha256'], digest(bin_dir / 'generator.swp'))
         self.assertEqual((bin_dir / 'launcher.vbs').read_bytes(), (REPOSITORY / 'launcher.vbs').read_bytes())
         self.assertEqual((bin_dir / 'README.md').read_bytes(), (REPOSITORY / 'GENERATOR.md').read_bytes())

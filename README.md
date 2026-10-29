@@ -45,7 +45,9 @@ build/
 
 `bin.zip` contains the eight files from `bin/`. The root `GENERATOR.md` is copied into the package as `README.md`. The checksum report stays in the build directory, outside `bin/` and the archive. An explicit relative output directory is resolved from the terminal's current directory. Build outputs inside this repository must stay under `build/`; external output directories are also supported.
 
-`generator.bas` is the only editable VBA source. Save it as UTF-8; the builder embeds it in the native project using Windows-1251 to preserve localized drawing labels. Generated SWP files and release packages stay outside Git. SolidWorks is not started during package creation; it compiles the VBA project when the project is first loaded.
+The editable VBA sources live in [`modules/`](modules/README.md). Save them as UTF-8. [`modules/project.json`](modules/project.json) lists every source module in build order, with declarations first. The builder validates the list and combines the modules in memory into the existing `Macro11` host module inside one `generator.swp`. This unity build preserves shared `Private` declarations and the `main` entry point. It does not generate a second editable BAS file. Windows-1251 encoding in the native project preserves localized drawing labels. The checksum report includes the composed-source checksum and the path and checksum of every input module and the manifest.
+
+Generated SWP files and release packages stay outside Git. SolidWorks is not started during package creation; it compiles the VBA project when the project is first loaded.
 
 The equivalent Python packaging command is:
 
@@ -53,7 +55,7 @@ The equivalent Python packaging command is:
 python -B tools/package_launcher.py
 ```
 
-For a native project without the full package, use `python -B tools/rebuild_native.py`. Its default output is `../tmp/solid.works.drawing-generator/build/generator.swp`; `--source FILE.bas --output FILE.swp` selects explicit paths.
+For a native project without the full package, use `python -B tools/rebuild_native.py`. It reads `modules/` by default and writes `../tmp/solid.works.drawing-generator/build/generator.swp`. Use `--source DIRECTORY --output FILE.swp` for another module project. A standalone `--source FILE.bas` remains supported for external test harnesses.
 
 ## Tests
 
@@ -63,6 +65,7 @@ Run Python with `-B` to prevent bytecode caches in the checkout. Test fixtures, 
 
 ```bat
 python -B tests/test_repository.py
+python -B tests/test_modular_sources.py
 python -B tests/test_build.py
 python -B tests/test_launcher_contract.py
 python -B tests/test_controller_recovery.py
@@ -109,3 +112,7 @@ The crash test interrupts only its own background SolidWorks process. The failed
 `test_compact_dimensions.py --before ORIGINAL_PACK --after UPDATED_PACK` compares external LeftSide drawing packs for graphical dimension coverage, deduplication, text overlap, page boundaries, and preservation of the flat dimensions on one sheet. Optional `--pattern-pack FOUR_HOLE_PACK` checks repeated-hole callouts and equal-pitch labels. All comparison paths must point outside the repository.
 
 `InspectDimensionLayout.ps1 -DrawingPath EXTERNAL_DRAWING -OutputPath EXTERNAL_JSON` reads native dimension text, arrowheads, extension lines, and view scales in its own SolidWorks process. Add `-IncludeGeometry` only when projected vertex data is needed. The strict same-sheet layout solver remains experimental; LeftSide on A4 is a known failing case. The default runtime keeps compatible generation and reports unresolved placement through `LAYOUT REVIEW` warnings. Package or unit-test success must not be presented as full GOST compliance.
+
+`CompareDimensionArrangement.ps1 -DrawingPath EXTERNAL_DRAWING -OutputDirectory EXTERNAL_DIRECTORY -Cases placement|creation|postprocess|all` compares native SolidWorks dimension tools on a drawing referencing exactly one part. It copies the drawing and part into a unique external directory, replaces the copied reference, and uses its own background SolidWorks process. Placement cases compare sheet-wide Auto Arrange, bent radial/diameter leaders, and Auto Arrange per view; every existing dimension and value must remain unchanged. Creation cases replace dimensions in the copied drawing using native Autodimension with chain or baseline schemes, then Auto Arrange. Their dimension counts can differ and require a geometry coverage review. `all` runs placement and creation. The default `postprocess` case requires a previously created `autodimension_chain.slddrw` in the output directory and runs the canonical VBA leader postprocessor on an isolated copy. Build its external harness first with `python -B tests/build_leader_fixture.py`; after the CAD run, check `python -B tests/test_native_leaders.py`. The harness and check use the external `hub_leaders/comparison` fixture directory. The script exports native drawings, PDFs, and a JSON report. Failed layouts receive a `_failed` filename for diagnosis. Only Matochina4x100 is currently used to validate native postprocessing. Inspect crossings and manufacturing completeness before release; the runtime mode is opt-in through `NativeDimensions=1`.
+
+The native postprocess check audits every removal against an unchanged retained measurement and the original model-coordinate interval. It checks disjoint regions for dimensioned views, graphical bounds, compact text, symmetry centerlines, and inclined leader geometry. Dimensionless isometric views remain geometry obstacles; their blank surrounding space can be used by the lower view. The CAD harness limits macro execution to two minutes and stops only its own process if a VBA dialog blocks the run. `-Cases inspect` exports native reference points and view geometry without running the postprocessor. Delete `input-geometry.json` after replacing the chain fixture so the next postprocess run captures fresh source geometry.

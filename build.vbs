@@ -9,7 +9,8 @@ Const SHELL_WINDOW_NORMAL = 1
 Const PROCESS_RUNNING = 0
 Const EXIT_POLL_MILLISECONDS = 50
 Const CONSOLE_HOST_FILENAME = "cscript.exe"
-Const SOURCE_FILENAME = "generator.bas"
+Const SOURCE_DIRECTORY = "modules"
+Const SOURCE_MANIFEST_FILENAME = "project.json"
 Const BUILDER_RELATIVE_PATH = "tools\package_launcher.py"
 Const DEFAULT_PACKAGE_RELATIVE_PATH = "build"
 Const MAX_POSITIONAL_ARGUMENTS = 1
@@ -69,8 +70,8 @@ Function BuildPackage()
         packageRoot = fso.GetAbsolutePathName(WScript.Arguments.Unnamed(OUTPUT_DIRECTORY_ARGUMENT_INDEX))
     End If
     builder = fso.BuildPath(scriptDir, BUILDER_RELATIVE_PATH)
-    If Not fso.FileExists(fso.BuildPath(scriptDir, SOURCE_FILENAME)) Or Not fso.FileExists(builder) Then
-        Err.Raise vbObjectError + ERR_BUILD, , "Build requires generator.bas and tools\package_launcher.py in the source checkout."
+    If Not fso.FileExists(fso.BuildPath(fso.BuildPath(scriptDir, SOURCE_DIRECTORY), SOURCE_MANIFEST_FILENAME)) Or Not fso.FileExists(builder) Then
+        Err.Raise vbObjectError + ERR_BUILD, , "Build requires modules\project.json and tools\package_launcher.py in the source checkout."
     End If
     pythonPath = shell.Environment("PROCESS")(PYTHON_ENVIRONMENT_VARIABLE)
     command = DEFAULT_PYTHON_COMMAND
@@ -78,7 +79,7 @@ Function BuildPackage()
         command = Q(pythonPath)
     End If
     command = command & " -B " & Q(builder) & " " & Q(packageRoot)
-    WScript.Echo "[build] Source: " & fso.BuildPath(scriptDir, SOURCE_FILENAME)
+    WScript.Echo "[build] Source: " & fso.BuildPath(scriptDir, SOURCE_DIRECTORY)
     WScript.Echo "[build] Output: " & packageRoot
     result = RunConsole(command)
     If result <> EXIT_SUCCESS Then

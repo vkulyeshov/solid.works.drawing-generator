@@ -10,8 +10,9 @@ sys.dont_write_bytecode = True
 base = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(base / 'tools'))
 from project_paths import work_path
+from vba_sources import read_source
 
-source = (base / 'generator.bas').read_text('utf8')
+source = read_source()
 routine = re.search(r'(?ms)^Private Function ConfigureSnapshotTargets\(.*?^End Function', source)[0]
 routine = routine.replace('Private Function ', 'Function ')
 routine = re.sub(r' As (?:Object|Variant|Long|String)\b', '', routine)

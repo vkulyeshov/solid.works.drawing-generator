@@ -1,4 +1,4 @@
-"""Rebuild a native VBA container from the canonical BAS source."""
+"""Rebuild one native VBA container from ordered source modules or a test BAS."""
 from pathlib import Path
 import argparse
 import hashlib
@@ -8,11 +8,11 @@ import struct
 import sys
 sys.dont_write_bytecode = True
 from build_swp import Compound, decompress, compress
-from project_paths import REPOSITORY, build_path, work_path
+from project_paths import build_path, work_path
 from vba_project import empty_project
+from vba_sources import DEFAULT_SOURCE, read_source, source_digest, source_files
 
 # Source identity and VBA project format constants.
-SOURCE_ENCODING = 'utf-8-sig'
 NATIVE_ENCODING = 'cp1251'
 PROJECT_CODE_PAGE = 1251
 SOURCE_MODULE_ATTRIBUTE = 'Attribute VB_Name = "generator"'
@@ -32,13 +32,12 @@ CACHE_VERSION_END = 4
 FORCE_RECOMPILE_VERSION = b'\xff\xff'
 BUILD_REPORT_SUFFIX = '.build.json'
 BUILD_REPORT_ENCODING = 'ascii'
-DEFAULT_SOURCE_FILENAME = 'generator.bas'
 DEFAULT_BUILD_PATH = 'build/generator.swp'
 
 
 def module_source(source):
     """Read UTF-8 source and encode it for the VBA project's Windows-1251 code page."""
-    text = source.read_text(SOURCE_ENCODING)
+    text = read_source(source)
     if text.count(SOURCE_MODULE_ATTRIBUTE) != 1:
         raise ValueError('Expected one generator module attribute in the BAS source')
     if not re.search(ENTRY_POINT_PATTERN, text, re.MULTILINE):
@@ -47,6 +46,7 @@ def module_source(source):
 
 
 def rebuild(source, output):
+    source = Path(source)
     output = build_path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     container = empty_project()
@@ -65,7 +65,10 @@ def rebuild(source, output):
     container.write(output)
     check = Compound(output)
     assert decompress(check.streams[module]) == encoded, 'Native source verification failed'
-    info = {'source':str(source.resolve()), 'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
+    info = {'source':str(source.resolve()), 'source_sha256':source_digest(source),
+            'source_files':[{'path':str(path.resolve()),
+                             'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+                            for path in source_files(source)],
             'macro_sha256':hashlib.sha256(output.read_bytes()).hexdigest()}
     output.with_suffix(BUILD_REPORT_SUFFIX).write_text(json.dumps(info,indent=2),encoding=BUILD_REPORT_ENCODING)
     print(f'Native container rebuilt: {output}')
@@ -74,7 +77,8 @@ def rebuild(source, output):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source', type=Path, default=REPOSITORY/DEFAULT_SOURCE_FILENAME)
+    parser.add_argument('--source', type=Path, default=DEFAULT_SOURCE,
+                        help='Source-module directory, or a standalone test BAS')
     parser.add_argument('--output', type=Path, default=work_path(DEFAULT_BUILD_PATH))
     args = parser.parse_args()
     rebuild(args.source, args.output)

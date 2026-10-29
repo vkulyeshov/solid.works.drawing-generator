@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "modules": [
+    "constants.bas",
+    "platform.bas",
+    "state.bas",
+    "background.bas",
+    "snapshots.bas",
+    "inventory.bas",
+    "jobs.bas",
+    "sheets.bas",
+    "views.bas",
+    "dimensions.bas",
+    "native_dimensions.bas",
+    "native_labels.bas",
+    "symmetry.bas",
+    "native_layout.bas",
+    "coordinate_labels.bas",
+    "annotations.bas",
+    "properties.bas",
+    "runtime.bas",
+    "checkpoint.bas",
+    "orientation.bas",
+    "feature_dimensions.bas",
+    "flat_dimensions.bas",
+    "coordinate_requests.bas",
+    "detail_views.bas",
+    "coordinate_geometry.bas",
+    "coordinate_layout.bas",
+    "main.bas"
+  ]
+}

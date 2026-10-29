@@ -10,14 +10,18 @@ sys.dont_write_bytecode = True
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE / 'tools'))
 from project_paths import work_path
+from vba_sources import read_source
 
-source = (BASE / 'generator.bas').read_text('utf8')
+source = read_source()
 names = ['UseCoordinateDots', 'CoordinateMarkerPadding', 'CoordinateTextCenter', 'FindCoordinateTextCenter',
          'AddForbiddenCoordinate', 'TryCoordinatePlanRow', 'BalanceCoordinateSides',
          'UnionDetailBounds', 'DetailProfileRadius', 'MinD', 'SortedCoordinateKeys',
          'ReferencePairCost', 'LocalNeighborBands', 'LocalDatumPairs', 'ResetCoordinatePlans',
          'CompatibleRequiredCoordinateLanes', 'CompatibleBalanceCoordinateSides',
-         'CompatiblePackCoordinateSide', 'CoordinateRegionEdge']
+         'CompatiblePackCoordinateSide', 'CoordinateRegionEdge', 'NativeBoundsInside',
+         'NativeBoxesOverlap', 'NativeLeaderCrossesBox', 'NativeIntervalKey',
+         'NativePointKey', 'NativeReflectedPoint', 'NativePairKey', 'NativeDirectionKey',
+         'NativeTextBounds', 'NativeExpandBounds', 'NativeProtectedSpan']
 routines = []
 for name in names:
     body = re.search(r'(?ms)^Private (Function|Sub) ' + name + r'\(.*?^End (?:Function|Sub)', source)[0]
@@ -29,6 +33,7 @@ for name in names:
     if name == 'ReferencePairCost':
         body = body.replace('Set a =', 'a =').replace('Set b =', 'b =')
     body = re.sub(r' As (?:Object|Variant|Long|Double|Boolean|String|Collection)\b', '', body)
+    body = body.replace(' As SldWorks.DisplayData', '').replace('Trim$(', 'Trim(')
     body = re.sub(r'(?m)^(\s*)ReDim (?!Preserve)(.+)$', r'\1ReDim \2', body)
     body = re.sub(r'\(0 To ([^)]+)\)', r'(\1)', body)
     body = re.sub(r'(?m)^(\s*)Next \w+\s*$', r'\1Next', body)
@@ -73,8 +78,37 @@ Function Plans(ByVal count, ByVal spacing, ByVal span)
     Set Plans = result
 End Function
 
+Class NativeTextDataStub
+    Public Text, Segment
+    Public Function GetTextCount()
+        GetTextCount = 1
+    End Function
+    Public Function GetTextAtIndex(ByVal index)
+        GetTextAtIndex = Text
+    End Function
+    Public Function GetTextHeightAtIndex(ByVal index)
+        GetTextHeightAtIndex = 0.0035
+    End Function
+    Public Function GetTextPositionAtIndex(ByVal index)
+        GetTextPositionAtIndex = Array(0, 0, 0)
+    End Function
+    Public Function GetTextAngleAtIndex(ByVal index)
+        GetTextAngleAtIndex = 0
+    End Function
+    Public Function GetLineCount()
+        If IsEmpty(Segment) Then
+            GetLineCount = 0
+        Else
+            GetLineCount = 1
+        End If
+    End Function
+    Public Function GetLineAtIndex2(ByVal index)
+        GetLineAtIndex2 = Segment
+    End Function
+End Class
+
 Sub Main()
-    Dim items, plan, used, bounds, number, coordinates, record, center, values, perps, i, pairs, pair
+    Dim items, plan, used, bounds, number, coordinates, record, center, values, perps, i, pairs, pair, textData
     Check Abs(GOST_ARROW_HEAD_LENGTH_M - 0.0025) < 0.0000001, "Arrow length"
     Check Abs(GOST_WITNESS_EXTENSION_M - 0.002) < 0.0000001, "Witness overrun"
     Check COORDINATE_LANE_PITCH_M >= 0.007, "Row pitch"
@@ -149,7 +183,32 @@ Sub Main()
     For Each plan In items.Items
         Check plan("lane") >= 0, "Compatibility fallback lost a dimension"
     Next
-    WScript.Echo "PASS: GOST markers, spacing, lane capacity, and detail coverage bounds"
+    Check NativeBoundsInside(Array(0.03, 0.09, 0.20, 0.28), Array(0.026, 0.082, 0.202, 0.289)), "In-frame graphics rejected"
+    Check Not NativeBoundsInside(Array(0.02, 0.09, 0.20, 0.28), Array(0.026, 0.082, 0.202, 0.289)), "Out-of-frame leader accepted"
+    Check NativeBoxesOverlap(Array(0, 0, 2, 2), Array(1, 1, 3, 3), 0), "Overlapping text boxes missed"
+    Check Not NativeBoxesOverlap(Array(0, 0, 1, 1), Array(2, 2, 3, 3), 0), "Separate text boxes rejected"
+    Check NativeLeaderCrossesBox(0, 0, 4, 4, Array(1, 1, 2, 2)), "Diagonal through text missed"
+    Check NativeLeaderCrossesBox(4, 4, 0, 0, Array(1, 1, 2, 2)), "Reversed diagonal through text missed"
+    Check Not NativeLeaderCrossesBox(0, 0, 4, 0, Array(1, 1, 2, 2)), "Horizontal leader outside text rejected"
+    Check Not NativeLeaderCrossesBox(0, 0, 0, 4, Array(1, 1, 2, 2)), "Vertical leader outside text rejected"
+    Check NativeIntervalKey(0.01, 0.02, 0, True) = NativeIntervalKey(-0.02, -0.01, 0, True), "Verified mirror intervals did not group"
+    Check NativeIntervalKey(0.01, 0.02, 0, False) <> NativeIntervalKey(-0.02, -0.01, 0, False), "Intervals grouped without symmetry evidence"
+    Check NativeIntervalKey(0.01, 0.02, 0, False) <> NativeIntervalKey(0.03, 0.04, 0, False), "Equal lengths at different source coordinates grouped"
+    Check NativeIntervalKey(0, 0.001354, 0, True) = NativeIntervalKey(-0.001354, 0, 0, True), "Near-origin mirror intervals did not group"
+    Check NativePairKey(Array(1, 2, 3), Array(4, 5, 6)) = NativePairKey(Array(4, 5, 6), Array(1, 2, 3)), "Reference order changes geometric identity"
+    bounds = NativeProtectedSpan(Array(0, 0), Array(0.01, 0), GOST_ARROW_LENGTH_M)
+    Check Abs(bounds(0) + GOST_ARROW_LENGTH_M) < MIN_PROJECTED_EXTENT_M And Abs(bounds(2) - 0.01 - GOST_ARROW_LENGTH_M) < MIN_PROJECTED_EXTENT_M, "Future outside arrow tails were not reserved"
+    bounds = NativeProtectedSpan(Array(0.076, 0.124), Array(0.076, 0.1516), GOST_WITNESS_EXTENSION_M)
+    Check NativeLeaderCrossesBox(bounds(0), bounds(1), bounds(2), bounds(3), Array(0.072, 0.152, 0.0834, 0.1555)), "Future witness extension was not reserved"
+    Set textData = New NativeTextDataStub
+    textData.Text = " <MOD-DIAM> "
+    bounds = NativeTextBounds(textData)
+    Check bounds(2) - bounds(0) < 0.01, "A native diameter symbol was counted as a ten-character token"
+    textData.Text = " 6,39 "
+    textData.Segment = Array(0, 0, -1, -1, 0, 0, 0, 0.0093, 0, 0)
+    bounds = NativeTextBounds(textData)
+    Check Abs(bounds(2) - bounds(0) - 0.0093) < 0.000001, "Native leader shoulder width was ignored"
+    WScript.Echo "PASS: GOST markers, spacing, lane capacity, detail bounds, and inclined leader geometry"
 End Sub
 
 Main

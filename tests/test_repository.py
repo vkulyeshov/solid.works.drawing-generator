@@ -15,6 +15,7 @@ from build_swp import Compound, decompress
 from project_paths import BUILD_DIRECTORY, build_path, external_path, work_path
 from rebuild_native import rebuild, module_source
 from vba_project import empty_project
+from vba_sources import DEFAULT_SOURCE, read_source, source_files
 
 
 def source_paths():
@@ -27,18 +28,19 @@ def source_paths():
 
 
 class RepositoryTests(unittest.TestCase):
-    def test_native_source_matches_bas(self):
-        path = rebuild(REPOSITORY/'generator.bas', work_path('repository_tests/source.swp'))
+    def test_native_source_matches_modules(self):
+        path = rebuild(DEFAULT_SOURCE, work_path('repository_tests/source.swp'))
         container = Compound(path)
         module = next(i for i in container.streams if container.name(i) == 'Macro11')
-        expected = module_source(REPOSITORY/'generator.bas')
+        expected = module_source(DEFAULT_SOURCE)
         self.assertEqual(decompress(container.streams[module]), expected)
 
-    def test_single_canonical_source(self):
-        self.assertTrue((REPOSITORY/'generator.bas').is_file())
+    def test_canonical_sources_live_in_modules(self):
+        self.assertTrue((DEFAULT_SOURCE/'project.json').is_file())
+        self.assertFalse((REPOSITORY/'generator.bas').exists())
         self.assertFalse((REPOSITORY/'generator.utf8.txt').exists())
         self.assertFalse((REPOSITORY/'generator.swp').exists())
-        source = (REPOSITORY/'generator.bas').read_text('utf8')
+        source = read_source()
         self.assertEqual(source.count('Public Sub main()'), 1)
 
     def test_empty_project_has_no_generator_code(self):
@@ -65,18 +67,18 @@ class RepositoryTests(unittest.TestCase):
                 build_path(path)
 
     def test_rebuild_is_external_and_preserves_source(self):
-        source = REPOSITORY/'generator.bas'
-        expected = source.read_bytes()
-        output = rebuild(REPOSITORY/'generator.bas', work_path('repository_tests/rebuilt.swp'))
+        source = DEFAULT_SOURCE
+        expected = {path:path.read_bytes() for path in source_files(source)}
+        output = rebuild(source, work_path('repository_tests/rebuilt.swp'))
         container = Compound(output)
         module = next(i for i in container.streams if container.name(i) == 'Macro11')
         self.assertEqual(decompress(container.streams[module]), module_source(source))
-        self.assertEqual(source.read_bytes(), expected)
+        self.assertEqual({path:path.read_bytes() for path in source_files(source)}, expected)
 
     def test_source_edits_reach_native_output(self):
         source = work_path('repository_tests/modified.bas')
         source.parent.mkdir(parents=True, exist_ok=True)
-        original = (REPOSITORY/'generator.bas').read_text('utf8')
+        original = read_source()
         source.write_text(original+"\n' Source freshness regression marker\n",encoding='utf8')
         output = rebuild(source, work_path('repository_tests/modified.swp'))
         native = Compound(output)
@@ -97,8 +99,8 @@ class RepositoryTests(unittest.TestCase):
                 self.assertTrue(text.isascii(), str(path))
 
     def test_cyrillic_survives_native_source_encoding(self):
-        source = REPOSITORY/'generator.bas'
-        original = source.read_text('utf8')
+        source = DEFAULT_SOURCE
+        original = read_source(source)
         literals = re.findall(r'"(?:[^"\n]|"")*"',original)
         localized = [literal for literal in literals if not literal.isascii()]
         self.assertGreater(len(localized), 0)

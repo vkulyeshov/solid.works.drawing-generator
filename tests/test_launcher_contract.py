@@ -102,7 +102,7 @@ case('missing runtime macro preserves reset checkpoint',
      [model, '/macro:'+str(folder/'missing.swp'), '/out:'+str(folder/'not-empty'), '/reset'],
      1, 'Packaged macro not found', environment)
 case('empty macro', [model, '/macro:'], 1, 'A compiled VBA file is required')
-case('wrong macro extension', [model, '/macro:'+str(base/'generator.bas')],
+case('wrong macro extension', [model, '/macro:'+str(base/'modules/main.bas')],
      1, 'Macro must be a compiled .swp file')
 assert state.read_text('utf-16')=='checkpoint sentinel'
 assert (folder/'not-empty/keep.txt').read_text('utf8')=='existing user data'

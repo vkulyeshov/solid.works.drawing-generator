@@ -5,6 +5,7 @@ sys.dont_write_bytecode = True
 sys.stdout.reconfigure(encoding='utf-8')
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/"tools"))
 from project_paths import work_path
+from vba_sources import read_source, source_digest
 import argparse
 import hashlib
 import json
@@ -89,7 +90,7 @@ else:
                 assert all(c['x0']>=-1 and c['x1']<=page.width+1 and c['y0']>=-1 and c['y1']<=page.height+1 for c in page.chars),'Text outside the page'
             # Check labels created by VBA, independently of the embedded template.
             # This detects project-code-page mistakes that corrupt Cyrillic at runtime.
-            vba=(base/'generator.bas').read_text('utf8')
+            vba=read_source()
             compact=lambda value: re.sub(r'\s+','',value)
             removed_marker='\u0410\u0412\u0422\u041e\u041c\u0410\u0422\u0418\u0427\u041d\u0418\u0419 \u041f\u0420\u041e\u0404\u041a\u0422'
             assert all(compact(removed_marker) not in compact(page.extract_text() or '') for page in pdf.pages),'Removed review label returned'
@@ -106,11 +107,11 @@ else:
     if name=='resume':
         assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest()==h for p,h in native_before.items()),'Completed artifacts changed during resume'
 result={'test':name,'passed':True,'seconds':round(time.monotonic()-started,1),'exit_code':code,'output':str(out),
-        'source_sha256':hashlib.sha256((base/'generator.bas').read_bytes()).hexdigest(),
+        'source_sha256':source_digest(),
         'launcher_sha256':hashlib.sha256(args.launcher.read_bytes()).hexdigest()}
 if (out/'generator.build.json').exists():
     build=json.loads((out/'generator.build.json').read_text('ascii'))
-    assert build['source_sha256']==result['source_sha256'],'Runtime package does not match current BAS source; run build.vbs first'
+    assert build['source_sha256']==result['source_sha256'],'Runtime package does not match current source modules; run build.vbs first'
     result['macro_sha256']=build['macro_sha256']
 (audit/(name+'.json')).write_text(json.dumps(result,indent=2),encoding='utf8')
 print(json.dumps(result,indent=2))

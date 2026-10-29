@@ -1,8 +1,8 @@
 """Empty SolidWorks 2025 VBA host metadata; contains no drawing-generator code.
 
 The host requires project records, library references, and an empty ThisLibrary
-document module. The executable Macro11 stream is empty until generator.bas is
-inserted by rebuild_native.py. This is a project template, not a second source.
+document module. The executable Macro11 stream is empty until the composed VBA
+modules are inserted by rebuild_native.py. This is host metadata, not source code.
 """
 import base64
 import json
