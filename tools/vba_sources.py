@@ -18,6 +18,30 @@ MODULE_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
 PROCEDURE = re.compile(r'^(?:Private |Public )?(?:Sub|Function) (\w+)\(', re.MULTILINE)
 
 
+def validate_loop_controls(text):
+    """Catch reused nested For controls before SolidWorks opens a compiler dialog."""
+    active = []
+    for line_number, line in enumerate(text.splitlines(), 1):
+        code = re.sub(r'"(?:[^"]|"")*"', '""', line).split("'", 1)[0]
+        for statement in code.split(':'):
+            statement = statement.strip()
+            start = re.match(r'For\s+(?:Each\s+)?(\w+)\b', statement, re.I)
+            if start:
+                control = start[1].casefold()
+                if control in active:
+                    raise ValueError(f'Nested For control already in use: {start[1]} at line {line_number}')
+                active.append(control)
+            elif re.match(r'Next\b', statement, re.I):
+                controls = statement[4:].strip().split(',')
+                for control in controls:
+                    if not active or control.strip() and control.strip().casefold() != active[-1]:
+                        raise ValueError(f'Mismatched VBA Next at line {line_number}')
+                    active.pop()
+            elif re.match(r'End\s+(?:Sub|Function)\b', statement, re.I):
+                if active:
+                    raise ValueError(f'Unclosed VBA For loop at line {line_number}')
+
+
 def source_files(source=DEFAULT_SOURCE):
     """Return a validated manifest and its modules in explicit build order."""
     source = Path(source).resolve()
@@ -50,7 +74,9 @@ def read_source(source=DEFAULT_SOURCE):
     """Compose UTF-8 modules, or read a standalone BAS used by test harnesses."""
     paths = source_files(source)
     if len(paths) == 1:
-        return paths[0].read_text(SOURCE_ENCODING)
+        text = paths[0].read_text(SOURCE_ENCODING)
+        validate_loop_controls(text)
+        return text
     bodies = []
     procedures = set()
     for path in paths[1:]:
@@ -77,6 +103,7 @@ def read_source(source=DEFAULT_SOURCE):
             r'^Private (?:Const |Type |Declare |\w+ As )',
             text[first_procedure.start():], re.MULTILINE):
         raise ValueError('VBA declarations must precede procedures in the module manifest')
+    validate_loop_controls(text)
     return text
 
 

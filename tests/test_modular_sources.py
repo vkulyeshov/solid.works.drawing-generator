@@ -115,6 +115,21 @@ class ModularSourceTests(unittest.TestCase):
         path.write_text(path.read_text('utf-8').rstrip(), encoding='utf-8')
         self.assertIn('End Sub\nPublic Sub main()', read_source(self.project))
 
+    def test_nested_for_control_is_rejected_before_native_compilation(self):
+        self.write_module('helpers', 'Private Sub SetMessage()\n    Dim item As Variant\n'
+                          '    For Each item In Array(1, 2)\n'
+                          '        For Each ITEM In Array(3, 4)\n'
+                          '        Next ITEM\n    Next item\nEnd Sub\n')
+        with self.assertRaisesRegex(ValueError, 'Nested For control already in use'):
+            read_source(self.project)
+
+    def test_sequential_controls_and_colons_in_text_are_allowed(self):
+        self.write_module('helpers', 'Private Sub SetMessage()\n    Dim item As Variant\n'
+                          '    For Each item In Array(1, 2): message = "Next item: For item": Next item\n'
+                          "    ' For Each item In Array(1, 2)\n"
+                          '    For Each item In Array(3, 4)\n    Next item\nEnd Sub\n')
+        self.assertIn('message = "Next item: For item"', read_source(self.project))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -2,10 +2,23 @@ Attribute VB_Name = "flat_dimensions"
 Option Explicit
 Private Sub AddFlatDimensionSheet(ByVal d As SldWorks.ModelDoc2, ByVal doc As SldWorks.ModelDoc2, ByVal sourceView As SldWorks.View, ByVal code As String, ByVal name As String, ByVal material As String, ByVal mass As String)
     Dim v As SldWorks.View, detailScale As Double, sheet As SldWorks.Sheet, rc As Long, bounds As Variant, position As Variant
+    Dim bodies As Variant, item As Variant, body As SldWorks.Body2
     If Setting("AutoDimensions", "1") <> "1" Then
         Exit Sub
     End If
     NewFormattedSheet d, "Розміри розгортки"
+    If Setting("DimensionPlanning", "roles") = "roles" Then
+        doc.ShowConfiguration2 sourceView.ReferencedConfiguration
+        bodies = AsPart(doc).GetBodies2(SW_SOLID_BODY, True)
+        If Not IsEmpty(bodies) Then
+            If UBound(bodies) = LBound(bodies) Then
+                Set body = bodies(LBound(bodies))
+                If MakeProfileRoleDrawing(d, doc, sourceView.ReferencedConfiguration, body) Then
+                    Exit Sub
+                End If
+            End If
+        End If
+    End If
     Set v = AsDrawing(d).CreateDrawViewFromModelView3(doc.GetPathName, sourceView.GetOrientationName, LX(DETAIL_INITIAL_X_M), LY(DETAIL_INITIAL_Y_M), 0)
     If v Is Nothing Then
         Err.Raise vbObjectError + ERR_DETAIL_SHEET, , "Cannot create flat dimension view."

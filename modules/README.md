@@ -20,6 +20,24 @@ Every BAS file must be listed exactly once, with a matching `VB_Name` header and
 | `jobs.bas` | Per-job drawing creation and artifact export |
 | `sheets.bas` | Paper formats, templates, properties, title blocks |
 | `views.bas` | Model views, flat views, fitting and centering |
+| `six_views.bas` | Opposite views, two-sheet scale normalization, and dimension ownership across sheets |
+| `semantic_dimensions.bas` | Source feature dimensions and geometric ownership of design constraints |
+| `hole_patterns.bas` | Hole Wizard profile grouping and shared native hole callouts |
+| `pattern_dimensions.bas` | Circular and rectangular hole locations, offsets, and pitch-circle graphics |
+| `feature_constraints.bas` | Covered half-spans, coaxial diameters, and circular view quality |
+| `sketch_symmetry.bas` | Sketch geometry evidence and local rotated-reference matching |
+| `manufacturing_references.bas` | Model-topology circle classification, direct diameter references, profile view preference, and covered construction constraints |
+| `manufacturing_callouts.bas` | Combined distance-angle chamfer labels and profile dimension placement beside hole-pattern datums |
+| `profile_planner.bas` | Topological outline/slot classification and independent coordinate-constraint planning |
+| `profile_drawing.bas` | Geometry-based view roles, native references, dimension lanes, and space allocation |
+| `profile_routing.bas` | Filled-silhouette tests, material-free dimension bases, and leaders through open cuts |
+| `planar_constraints.bas` | Whole-profile and local feature symmetries; independent contour length variables and checked vector closure |
+| `planar_features.bas` | Constant-thickness prismatic recognition, circle loops and visible geometric references |
+| `planar_drawing.bas` | Native aligned lengths, inclined angles, shared hole sizes and single-view ownership |
+| `planar_routing.bas` | Outward dimension bases and crossing-aware placement for inclined planar edges |
+| `planar_layout.bas` | Joint native candidate placement, rotated text and arc geometry, backtracking and compactness improvement |
+| `planar_text.bas` | Cached Windows font measurements for native dimension text and safe GDI resource cleanup |
+| `open_bore_slots.bas` | Open circular keyways, exposed-geometry dimension references, and directed label placement |
 | `dimensions.bas` | Overall and diameter dimensions, validation, GOST styling |
 | `native_dimensions.bas` | Native Autodimension entry point |
 | `native_labels.bas` | Native dimension bounds, collision checks, label placement |
@@ -40,6 +58,9 @@ Every BAS file must be listed exactly once, with a matching `VB_Name` header and
 | `main.bas` | Macro entry point and batch orchestration |
 
 ## Native output
+
+`dimension_appearance.bas` applies the common contour/dimension line weights and
+the selected gray or black dimension color to every generated drawing.
 
 These are source modules for a unity build, not independently imported VBA
 components. `tools/vba_sources.py` strips their individual headers and combines

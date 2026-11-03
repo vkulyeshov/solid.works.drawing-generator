@@ -7,18 +7,35 @@ Private Type WindowBounds
     Bottom As Long
 End Type
 
+Private Type DrawingTextExtent
+    Width As Long
+    Height As Long
+End Type
+
 #If VBA7 Then
 Private Declare PtrSafe Function ShowWindow Lib "user32" (ByVal windowHandle As LongPtr, ByVal command As Long) As Long
 Private Declare PtrSafe Function IsWindowVisible Lib "user32" (ByVal windowHandle As LongPtr) As Long
 Private Declare PtrSafe Function GetSystemMetrics Lib "user32" (ByVal metric As Long) As Long
 Private Declare PtrSafe Function SetWindowPos Lib "user32" (ByVal windowHandle As LongPtr, ByVal insertAfter As LongPtr, ByVal x As Long, ByVal y As Long, ByVal width As Long, ByVal height As Long, ByVal flags As Long) As Long
 Private Declare PtrSafe Function GetWindowRect Lib "user32" (ByVal windowHandle As LongPtr, ByRef bounds As WindowBounds) As Long
+Private Declare PtrSafe Function CreateCompatibleDC Lib "gdi32" (ByVal device As LongPtr) As LongPtr
+Private Declare PtrSafe Function CreateFontW Lib "gdi32" (ByVal height As Long, ByVal width As Long, ByVal escapement As Long, ByVal orientation As Long, ByVal weight As Long, ByVal italic As Long, ByVal underline As Long, ByVal strikeout As Long, ByVal characterSet As Long, ByVal outputPrecision As Long, ByVal clipPrecision As Long, ByVal quality As Long, ByVal pitch As Long, ByVal face As LongPtr) As LongPtr
+Private Declare PtrSafe Function SelectObject Lib "gdi32" (ByVal device As LongPtr, ByVal item As LongPtr) As LongPtr
+Private Declare PtrSafe Function GetTextExtentPoint32W Lib "gdi32" (ByVal device As LongPtr, ByVal text As LongPtr, ByVal count As Long, ByRef extent As DrawingTextExtent) As Long
+Private Declare PtrSafe Function DeleteObject Lib "gdi32" (ByVal item As LongPtr) As Long
+Private Declare PtrSafe Function DeleteDC Lib "gdi32" (ByVal device As LongPtr) As Long
 #Else
 Private Declare Function ShowWindow Lib "user32" (ByVal windowHandle As Long, ByVal command As Long) As Long
 Private Declare Function IsWindowVisible Lib "user32" (ByVal windowHandle As Long) As Long
 Private Declare Function GetSystemMetrics Lib "user32" (ByVal metric As Long) As Long
 Private Declare Function SetWindowPos Lib "user32" (ByVal windowHandle As Long, ByVal insertAfter As Long, ByVal x As Long, ByVal y As Long, ByVal width As Long, ByVal height As Long, ByVal flags As Long) As Long
 Private Declare Function GetWindowRect Lib "user32" (ByVal windowHandle As Long, ByRef bounds As WindowBounds) As Long
+Private Declare Function CreateCompatibleDC Lib "gdi32" (ByVal device As Long) As Long
+Private Declare Function CreateFontW Lib "gdi32" (ByVal height As Long, ByVal width As Long, ByVal escapement As Long, ByVal orientation As Long, ByVal weight As Long, ByVal italic As Long, ByVal underline As Long, ByVal strikeout As Long, ByVal characterSet As Long, ByVal outputPrecision As Long, ByVal clipPrecision As Long, ByVal quality As Long, ByVal pitch As Long, ByVal face As Long) As Long
+Private Declare Function SelectObject Lib "gdi32" (ByVal device As Long, ByVal item As Long) As Long
+Private Declare Function GetTextExtentPoint32W Lib "gdi32" (ByVal device As Long, ByVal text As Long, ByVal count As Long, ByRef extent As DrawingTextExtent) As Long
+Private Declare Function DeleteObject Lib "gdi32" (ByVal item As Long) As Long
+Private Declare Function DeleteDC Lib "gdi32" (ByVal device As Long) As Long
 #End If
 
 ' SolidWorks 2025 VBA. All geometry remains native and associative.

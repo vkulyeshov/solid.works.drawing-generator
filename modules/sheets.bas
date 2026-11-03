@@ -2,13 +2,15 @@ Attribute VB_Name = "sheets"
 Option Explicit
 Private Sub ConfigureDrawing(ByVal d As SldWorks.ModelDoc2)
     Dim tf As Object, i As Long
+    ConfigureDrawingLineWeights d
     d.Extension.SetUserPreferenceInteger SW_PREF_DIMENSION_STANDARD, 0, SW_DRAFTING_STANDARD_GOST ' GOST
     d.Extension.SetUserPreferenceInteger SW_PREF_UNIT_SYSTEM, 0, SW_UNIT_SYSTEM_LEGACY_DEFAULT ' Keep the existing preset; linear units are set explicitly below.
     d.Extension.SetUserPreferenceInteger SW_PREF_LINEAR_UNITS, 0, SW_LENGTH_MILLIMETRES ' millimetres
     d.Extension.SetUserPreferenceInteger SW_PREF_LINEAR_PRECISION, 0, LINEAR_DECIMAL_PLACES
     d.Extension.SetUserPreferenceInteger SW_PREF_ANGULAR_PRECISION, 0, ANGULAR_DECIMAL_PLACES
-    d.Extension.SetUserPreferenceDouble SW_PREF_ARROW_HEAD_LENGTH, SW_PREFERENCE_NO_OPTION, GOST_ARROW_HEAD_LENGTH_M
-    d.Extension.SetUserPreferenceDouble SW_PREF_ARROW_HEAD_WIDTH, SW_PREFERENCE_NO_OPTION, GOST_ARROW_HEAD_WIDTH_M
+    ' SolidWorks Width is measured along the arrow; Height is transverse to it.
+    d.Extension.SetUserPreferenceDouble SW_PREF_ARROW_HEAD_HEIGHT, SW_PREFERENCE_NO_OPTION, GOST_ARROW_HEAD_WIDTH_M
+    d.Extension.SetUserPreferenceDouble SW_PREF_ARROW_HEAD_WIDTH, SW_PREFERENCE_NO_OPTION, GOST_ARROW_HEAD_LENGTH_M
     d.Extension.SetUserPreferenceDouble SW_PREF_ARROW_LENGTH, SW_PREFERENCE_NO_OPTION, GOST_ARROW_LENGTH_M
     d.Extension.SetUserPreferenceDouble SW_PREF_WITNESS_EXTENSION, SW_PREFERENCE_NO_OPTION, GOST_WITNESS_EXTENSION_M
     d.Extension.SetUserPreferenceDouble SW_PREF_WITNESS_GAP, SW_PREFERENCE_NO_OPTION, GOST_WITNESS_GAP_M
@@ -22,12 +24,13 @@ Private Sub ConfigureDrawing(ByVal d As SldWorks.ModelDoc2)
     For Each toggleId In Array(SW_HIDE_AXES, SW_HIDE_PLANES, SW_HIDE_ORIGINS, SW_HIDE_TEMPORARY_AXES, SW_HIDE_COORDINATE_SYSTEMS, SW_HIDE_REFERENCE_POINTS, SW_HIDE_CURVES, SW_HIDE_SKETCHES, SW_HIDE_REFERENCE_POINTS_2)
         d.SetUserPreferenceToggle CLng(toggleId), False
     Next toggleId
-    For i = SW_TEXT_FORMAT_NOTE To SW_TEXT_FORMAT_DIMENSION
-        Set tf = d.GetUserPreferenceTextFormat(i)
+    Dim formatId As Variant
+    For Each formatId In Array(SW_TEXT_FORMAT_NOTE, SW_TEXT_FORMAT_DIMENSION, SW_TEXT_FORMAT_DETAIL_LABEL, SW_TEXT_FORMAT_DETAIL_VIEW_NAME, SW_TEXT_FORMAT_DETAIL_VIEW_LABEL, SW_TEXT_FORMAT_DETAIL_VIEW_SCALE, SW_TEXT_FORMAT_DETAIL_VIEW_DELIMITER)
+        Set tf = d.GetUserPreferenceTextFormat(CLng(formatId))
         tf.TypeFaceName = Setting("Font", DEFAULT_FONT)
         tf.CharHeight = TEXT_HEIGHT_STANDARD_M: tf.Italic = False
-        d.SetUserPreferenceTextFormat i, tf
-    Next i
+        d.SetUserPreferenceTextFormat CLng(formatId), tf
+    Next formatId
 End Sub
 
 Private Sub ResolveDrawingTemplate()
@@ -154,6 +157,7 @@ Private Sub NewFormattedSheet(ByVal d As SldWorks.ModelDoc2, ByVal name As Strin
     If sheet.ReloadTemplate(False) <> 0 Then
         Err.Raise vbObjectError + ERR_DETAIL_SHEET, , "Cannot reload sheet format: " & name
     End If
+    sheet.SheetFormatVisible = True
     d.ForceRebuild3 False
 End Sub
 

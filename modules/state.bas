@@ -1,10 +1,34 @@
 Attribute VB_Name = "state"
 Option Explicit
+Private planarLayoutCompatibility As Object
+Private planarLayoutMaterial As Object
+Private planarLayoutVisibleMaterial As Object
+Private planarLayoutOutlines As Object
+Private planarDetailLabels As Object
+Private planarLayoutRejections As Object
+Private planarTextMetricCache As Object
 Private checkpointPath As String, snapshotPath As String, sourcePath As String, sourceStamp As String, snapshotConfig As String
 Private attempts As Long, resumeRun As Boolean, renderSignature As String
+Private excludeSuppressed As Boolean
 Private maxJobAttempts As Long, batchFailures As Long, interruptedJobNumber As Long
 Private sw As SldWorks.SldWorks, fs As Object, logFile As Object, manifest As Object
 Private dimensionKeys As Object
+Private featureDimensionOwners As Object
+Private featureDimensionRepeatedKeys As Object
+Private featureDimensionViewPriorities As Object
+Private featureDimensionOccurrenceCounts As Object
+Private featureCircleClassifications As Object
+Private featureDimensionPlacement As Object
+Private featureDimensionLanes As Object
+Private profileRoleDrawing As Boolean
+Private planarDimensionRequests As Object
+Private planarContourPoints As Collection
+Private profileRawLoops As Collection
+Private profileGeometryViews As Object
+Private profileDimensionRequests As Object
+Private profileSheetContours As Object
+Private autoExpandedViews As Boolean
+Private featurePatternGraphics As Collection
 Private routingXMinimum As Double, routingXMaximum As Double
 Private coordinateSelection As Object
 Private coordinateRegion As Variant

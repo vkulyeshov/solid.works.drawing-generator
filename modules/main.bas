@@ -3,7 +3,8 @@ Option Explicit
 Public Sub main()
     Dim source As SldWorks.ModelDoc2, p As String, cfg As String, key As Variant, job As Object
     Dim errNumber As Long, errText As String
-    Dim retryBatch As Boolean, attemptSetting As String
+    Dim retryBatch As Boolean, attemptSetting As String, dimensionColorValue As Long
+    Dim sourceWasClean As Boolean
     On Error GoTo Fatal
     Set sw = Application.SldWorks
     Set fs = CreateObject("Scripting.FileSystemObject")
@@ -14,7 +15,9 @@ Public Sub main()
     completed = 0: failures = 0: warningCount = 0: jobNumber = 0: viewCounter = 0
     batchFailures = 0: interruptedJobNumber = 0
     ReadSettings sw.GetCurrentMacroPathFolder & SETTINGS_RELATIVE_PATH
+    excludeSuppressed = SuppressionFilterEnabled()
     progressPath = Setting("LauncherProgress", "")
+    dimensionColorValue = DrawingDimensionColor()
     attemptSetting = Setting("MaxJobAttempts", DEFAULT_MAX_JOB_ATTEMPTS_TEXT)
     If Not IsNumeric(attemptSetting) Then
         Err.Raise vbObjectError + ERR_DRAWING_SETTINGS, , "MaxJobAttempts must be a positive integer."
@@ -67,6 +70,7 @@ Public Sub main()
         End If
     End If
     sourceDir = fs.GetParentFolderName(p)
+    sourceWasClean = SnapshotSourceApproved(original.GetSaveFlag, backgroundOwned, p, CStr(sw.GetProcessID))
     ResolveDrawingTemplate
     ValidateDrawingTemplate
     runDir = Setting("LauncherOutput", "")
@@ -96,8 +100,8 @@ Public Sub main()
         Log "RESUME existing plan; completed=" & completed & " total=" & jobs.Count
     Else
         ' A new snapshot must reflect a saved source. Resume uses only saved Models/.
-        If original.GetSaveFlag Then
-            Err.Raise vbObjectError + ERR_UNSAVED_SOURCE, , "Source has unsaved changes. Save or discard them yourself before creating a new snapshot."
+        If sourceWasClean = False Then
+            Err.Raise vbObjectError + ERR_UNSAVED_SOURCE, , "Source already had unsaved changes before generation. Save or discard them yourself, or use /background to generate from the saved files."
         End If
         Set logFile = fs.CreateTextFile(runDir & RUN_LOG_RELATIVE_PATH, True, True)
         logFile.Close: Set logFile = Nothing
@@ -105,6 +109,9 @@ Public Sub main()
         manifest.WriteLine "Number" & vbTab & "Model" & vbTab & "Configuration" & vbTab & "Body" & vbTab & "Quantity" & vbTab & "Drawing" & vbTab & "Status"
         manifest.Close: Set manifest = Nothing
         Log "START SolidWorks " & sw.RevisionNumber & " | " & sourcePath
+        If original.GetSaveFlag Then
+            Log "SOURCE validated before activation; rebuild changes will not be saved to the input files"
+        End If
         cfg = original.ConfigurationManager.ActiveConfiguration.Name
         snapshotConfig = cfg
         snapshotPath = MakeSnapshot(original)
@@ -114,8 +121,12 @@ Public Sub main()
         End If
         Set quantities = CreateObject("Scripting.Dictionary"): quantities.CompareMode = 1
         If rootModel.GetType = SW_DOC_ASSEMBLY Then
-            AsAssembly(rootModel).ResolveAllLightWeightComponents False
-            Inventory rootModel
+            If excludeSuppressed Then
+                AsAssembly(rootModel).ResolveAllLightWeightComponents False
+                Inventory rootModel
+            Else
+                InventoryAllSavedComponents rootModel, cfg
+            End If
         End If
         AddModelJobs rootModel, cfg, 1
         For Each key In quantities.Keys
@@ -149,7 +160,7 @@ Public Sub main()
     oldPdfQuality = sw.GetUserPreferenceToggle(SW_PREF_PDF_HIGH_QUALITY)
     sw.SetUserPreferenceToggle SW_PREF_INPUT_DIMENSION, False
     sw.SetUserPreferenceToggle SW_PREF_PDF_EMBED_FONTS, True
-    sw.SetUserPreferenceToggle SW_PREF_PDF_IN_COLOR, False
+    sw.SetUserPreferenceToggle SW_PREF_PDF_IN_COLOR, dimensionColorValue <> DIMENSION_COLOR_BLACK
     sw.SetUserPreferenceToggle SW_PREF_PDF_HIGH_QUALITY, True
     preferenceChanged = True
     retryBatch = Not HasPendingJobs()

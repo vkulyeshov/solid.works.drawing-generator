@@ -5,6 +5,7 @@ Private Sub AddText(ByVal d As SldWorks.ModelDoc2, ByVal text As String, ByVal x
     If Len(text) = 0 Then
         Exit Sub
     End If
+    AsDrawing(d).ActivateView ""
     d.ClearSelection2 True
     Set note = d.InsertNote(text)
     If note Is Nothing Then

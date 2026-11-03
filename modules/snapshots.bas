@@ -71,7 +71,7 @@ Private Function MakeSnapshot(ByVal doc As SldWorks.ModelDoc2) As String
     pg.IncludeDrawings = False
     pg.IncludeSimulationResults = False
     pg.IncludeToolboxComponents = True
-    pg.IncludeSuppressed = False
+    pg.IncludeSuppressed = Not excludeSuppressed
     pg.FlattenToSingleFolder = True
     Log "PACK get names"
     pg.GetDocumentNames names

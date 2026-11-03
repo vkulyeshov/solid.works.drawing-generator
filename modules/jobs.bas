@@ -6,9 +6,25 @@ Private Sub ProcessJob(ByVal j As Object)
     Dim outName As String, best As String, dims As Long, rc As Long, er As Long, wr As Long, success As Boolean
     Dim sheet As Object, viewScaleValue As Double, flatScale As Double, bodies As Variant, oneBody(0) As Object
     Dim mark As String, bodyName As String, mass As String, isAssembly As Boolean, multi As Boolean, active As Object
-    Dim useNativeDimensions As Boolean
+    Dim useNativeDimensions As Boolean, sixViews As Boolean
     Dim firstSheetName As String
     On Error GoTo Failed
+    profileRoleDrawing = False
+    Set planarDimensionRequests = Nothing
+    Set planarContourPoints = Nothing
+    Set profileRawLoops = Nothing
+    Set profileGeometryViews = Nothing
+    Set profileDimensionRequests = Nothing
+    Set profileSheetContours = Nothing
+    autoExpandedViews = False
+    Set featureDimensionLanes = Nothing
+    Set featureDimensionPlacement = Nothing
+    Set featureDimensionOwners = Nothing
+    Set featureDimensionRepeatedKeys = Nothing
+    Set featureDimensionViewPriorities = Nothing
+    Set featureDimensionOccurrenceCounts = Nothing
+    Set featureCircleClassifications = Nothing
+    Set featurePatternGraphics = Nothing
     Set dimensionKeys = CreateObject("Scripting.Dictionary")
     outName = CStr(j("out"))
     Log "JOB " & outName
@@ -27,7 +43,11 @@ Private Sub ProcessJob(ByVal j As Object)
     oldCfg = doc.ConfigurationManager.ActiveConfiguration.Name
     doc.ShowConfiguration2 cfg
     isAssembly = (doc.GetType = SW_DOC_ASSEMBLY)
-    useNativeDimensions = Setting("NativeDimensions", "0") = "1" And Not isAssembly And Not CBool(j("sheet"))
+    sixViews = SixViewMode()
+    If sixViews And (isAssembly Or CBool(j("sheet"))) Then
+        Err.Raise vbObjectError + ERR_DRAWING_SETTINGS, , "Six-view generation currently requires an ordinary solid part."
+    End If
+    useNativeDimensions = (Setting("NativeDimensions", "1") = "1" Or sixViews) And Not isAssembly And Not CBool(j("sheet"))
     If isAssembly Then
         AsAssembly(doc).ResolveAllLightWeightComponents False
     End If
@@ -72,6 +92,18 @@ Private Sub ProcessJob(ByVal j As Object)
     InitializePaper d
     FillTemplateProperties d, code, name, material, mass
     ConfigureDrawing d
+    If Not isAssembly And Setting("DimensionPlanning", "roles") = "roles" And Setting("AutoDimensions", "1") = "1" Then
+        If MakeProfileRoleDrawing(d, doc, cfg, b) Then
+            AddTechnicalNotes d, doc, cfg, b, CLng(j("qty")), False
+            GoTo PersistDrawing
+        End If
+        If MakePlanarFeatureDrawing(d, doc, cfg, b, outName) Then
+            Set sheet = AsDrawing(d).GetCurrentSheet
+            firstSheetName = sheet.GetName
+            AddTechnicalNotes d, doc, cfg, b, CLng(j("qty")), False
+            GoTo PersistDrawing
+        End If
+    End If
     best = BestOrientation(doc, b)
     Set mainView = MakeView(d, doc, cfg, b, best, LX(ORTHOGRAPHIC_COLUMN_X_M), LY(ORTHOGRAPHIC_ROW_Y_M))
     If mainView Is Nothing Then
@@ -98,19 +130,35 @@ Private Sub ProcessJob(ByVal j As Object)
     d.ClearSelection2 True
     AsDrawing(d).ActivateView ""
     d.Extension.SelectByID2 mainView.Name, "DRAWINGVIEW", 0, 0, 0, False, 0, Nothing, 0
-    Set bottomView = AsDrawing(d).CreateUnfoldedViewAt3(LX(ORTHOGRAPHIC_COLUMN_X_M), LY(AUXILIARY_ROW_Y_M), 0, False)
+    If sixViews Then
+        Set bottomView = MakeView(d, doc, cfg, b, SixPrimaryOrientation(best, False), LX(ORTHOGRAPHIC_COLUMN_X_M), LY(AUXILIARY_ROW_Y_M))
+    Else
+        Set bottomView = AsDrawing(d).CreateUnfoldedViewAt3(LX(ORTHOGRAPHIC_COLUMN_X_M), LY(AUXILIARY_ROW_Y_M), 0, False)
+    End If
     If Not bottomView Is Nothing Then
         ApplyBody bottomView, b
         bottomView.AlignWithView SW_NO_VIEW_ALIGNMENT, Nothing
-        bottomView.UseParentScale = True
+        If sixViews Then
+            bottomView.UseSheetScale = SW_USE_SHEET_SCALE
+        Else
+            bottomView.UseParentScale = True
+        End If
     End If
     d.ClearSelection2 True
     d.Extension.SelectByID2 mainView.Name, "DRAWINGVIEW", 0, 0, 0, False, 0, Nothing, 0
-    Set sideView = AsDrawing(d).CreateUnfoldedViewAt3(LX(AUXILIARY_COLUMN_X_M), LY(ORTHOGRAPHIC_ROW_Y_M), 0, False)
+    If sixViews Then
+        Set sideView = MakeView(d, doc, cfg, b, SixPrimaryOrientation(best, True), LX(AUXILIARY_COLUMN_X_M), LY(ORTHOGRAPHIC_ROW_Y_M))
+    Else
+        Set sideView = AsDrawing(d).CreateUnfoldedViewAt3(LX(AUXILIARY_COLUMN_X_M), LY(ORTHOGRAPHIC_ROW_Y_M), 0, False)
+    End If
     If Not sideView Is Nothing Then
         ApplyBody sideView, b
         sideView.AlignWithView SW_NO_VIEW_ALIGNMENT, Nothing
-        sideView.UseParentScale = True
+        If sixViews Then
+            sideView.UseSheetScale = SW_USE_SHEET_SCALE
+        Else
+            sideView.UseParentScale = True
+        End If
     End If
     If Not CBool(j("sheet")) Then
         If Not bottomView Is Nothing Then
@@ -164,10 +212,18 @@ Private Sub ProcessJob(ByVal j As Object)
     SetPaperScale sheet, viewScaleValue
     mainView.UseSheetScale = SW_USE_SHEET_SCALE
     If Not bottomView Is Nothing Then
-        bottomView.UseParentScale = True
+        If sixViews Then
+            bottomView.UseSheetScale = SW_USE_SHEET_SCALE
+        Else
+            bottomView.UseParentScale = True
+        End If
     End If
     If Not sideView Is Nothing Then
-        sideView.UseParentScale = True
+        If sixViews Then
+            sideView.UseSheetScale = SW_USE_SHEET_SCALE
+        Else
+            sideView.UseParentScale = True
+        End If
     End If
     d.ForceRebuild3 False
     CenterView mainView, LX(ORTHOGRAPHIC_COLUMN_X_M), LY(ORTHOGRAPHIC_ROW_Y_M)
@@ -182,13 +238,7 @@ Private Sub ProcessJob(ByVal j As Object)
     Log "VIEW before dimensions scale=" & mainView.ScaleDecimal & " position=" & box(0)
     JobStage j, "Dimensioning folded views"
     If useNativeDimensions Then
-        dims = NativeDimensionView(d, mainView)
-        If Not bottomView Is Nothing Then
-            rc = NativeDimensionView(d, bottomView)
-        End If
-        If Not sideView Is Nothing Then
-            rc = NativeDimensionView(d, sideView)
-        End If
+        Log "NATIVE dimensioning follows drawing persistence and reload"
     Else
         If Not isAssembly Then
             ImportModelItems d
@@ -235,6 +285,11 @@ Private Sub ProcessJob(ByVal j As Object)
     If isAssembly Then
         AddAssemblyList d, doc, cfg, code, name, mass
     End If
+    If sixViews Then
+        JobStage j, "Creating opposite views on the second sheet"
+        AddOppositeViewSheet d, doc, cfg, b, mainView, bottomView, sideView, isoView, viewScaleValue, CLng(j("qty"))
+    End If
+PersistDrawing:
     NormalizeDimensions d
     AsDrawing(d).ActivateSheet sheet.GetName
     d.ActiveView.EnableGraphicsUpdate = True
@@ -265,6 +320,46 @@ Private Sub ProcessJob(ByVal j As Object)
         PrepareDocumentWindow d
     End If
     d.ForceRebuild3 False
+    If useNativeDimensions And Not profileRoleDrawing Then
+        JobStage j, "Dimensioning persisted orthographic views"
+        Dim needsViews As Boolean
+        dims = TryNativeDimensionSheets(d, needsViews)
+        If needsViews Then
+            ClearNativeDrawingDimensions d
+            AsDrawing(d).ActivateSheet firstSheetName
+            Set mainView = AsDrawing(d).GetFirstView.GetNextView
+            Set bottomView = mainView.GetNextView
+            Set sideView = bottomView.GetNextView
+            Set isoView = sideView.GetNextView
+            autoExpandedViews = True
+            AddOppositeViewSheet d, doc, cfg, b, mainView, bottomView, sideView, isoView, mainView.ScaleDecimal, CLng(j("qty"))
+            Set doc = sw.GetOpenDocumentByName(CStr(j("path")))
+            Set active = sw.ActivateDoc3(doc.GetTitle, False, SW_REBUILD_USER_DECISION, er)
+            doc.SetSaveFlag
+            success = doc.Save3(SW_SAVE_SILENT, er, wr)
+            If success = False And (er <> 0 Or doc.GetSaveFlag) Then
+                Err.Raise vbObjectError + ERR_SAVE_MODEL, , "Cannot save snapshot orientations after view planning; errors=" & er & "; warnings=" & wr
+            End If
+            Set active = sw.ActivateDoc3(d.GetTitle, False, SW_REBUILD_USER_DECISION, er)
+            NormalizeSixViewScales d
+            d.ForceRebuild3 False
+            If d.Save3(SW_SAVE_SILENT, er, wr) = False Then
+                Err.Raise vbObjectError + ERR_SAVE_DRAWING, , "Cannot persist the expanded view plan: " & er
+            End If
+            ' Reload new projections before using their model-to-sheet geometry.
+            sw.CloseDoc d.GetTitle
+            Set d = sw.OpenDoc6(runDir & DRAWINGS_RELATIVE_DIRECTORY & outName & DRAWING_EXTENSION, SW_DOC_DRAWING, SW_OPEN_SILENT, "", er, wr)
+            If d Is Nothing Then
+                Err.Raise vbObjectError + ERR_REOPEN_DRAWING, , "Cannot reopen the expanded view plan: " & er
+            End If
+            Set currentDrawing = d
+            If backgroundOwned Then
+                PrepareDocumentWindow d
+            End If
+            d.ForceRebuild3 False
+            dims = NativeDimensionSheets(d)
+        End If
+    End If
     Set flatView = AsDrawing(d).GetFirstView
     Set flatView = flatView.GetNextView
     Do While Not flatView Is Nothing
@@ -284,10 +379,11 @@ Private Sub ProcessJob(ByVal j As Object)
     RefreshTemplateFields d
     JobStage j, "Saving rebuilt drawing"
     NormalizeDimensions d
-    If useNativeDimensions Then
+    If Setting("AutoDimensions", "1") = "1" Then
         JobStage j, "Arranging native dimensions and inclined leaders"
         FinishNativeDimensionLayout d
     End If
+    ApplyDrawingDimensionAppearance d
     WriteDimensionCoverage d, outName
     AsDrawing(d).ActivateSheet firstSheetName
     Log "SAVE rebuilt drawing " & outName
@@ -310,7 +406,7 @@ Private Sub ProcessJob(ByVal j As Object)
     j("pdfBytes") = CStr(fs.GetFile(runDir & PDF_RELATIVE_DIRECTORY & outName & PDF_EXTENSION).Size)
     RecountJobResults
     SaveCheckpoint
-    Log "OK " & outName & " dims(main)=" & dims
+    Log "OK " & outName
     dimensionKeys.RemoveAll
     Set coordinateSelection = Nothing
     Set coordinateSourceView = Nothing

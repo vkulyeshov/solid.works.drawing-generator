@@ -4,6 +4,7 @@ import sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/"tools"))
 from project_paths import work_path
+import atexit
 import json
 import os
 import subprocess
@@ -11,10 +12,23 @@ import tempfile
 import shutil
 
 base = Path(__file__).resolve().parents[1]
-script = base / 'launcher.vbs'
 host = Path(os.environ['WINDIR']) / 'System32/cscript.exe'
 folder = work_path('launcher_contract')
 folder.mkdir(parents=True, exist_ok=True)
+# Exercise a disposable launcher with a private lock, so a user's running
+# generator is never blocked, stopped, or mistaken for a stale test sentinel.
+package = tempfile.TemporaryDirectory(prefix='package_', dir=folder)
+atexit.register(package.cleanup)
+package_path = Path(package.name)
+lock_name = 'GeneratorContract_' + package_path.name + '.lock'
+script = package_path / 'launcher.vbs'
+launcher_source = (base / 'launcher.vbs').read_text('utf8')
+lock_declaration = 'Const SHARED_LOCK_FILENAME = "SolidWorks_AirDuctDrawings.lock"'
+assert launcher_source.count(lock_declaration) == 1
+script.write_text(launcher_source.replace(lock_declaration,
+                  'Const SHARED_LOCK_FILENAME = "' + lock_name + '"'), encoding='utf8')
+shutil.copy2(base / 'generator.ini', package_path / 'generator.ini')
+shutil.copytree(base / 'templates', package_path / 'templates')
 model = base.parent / 'model/RoofFrontLeftFrontArch.SLDPRT'
 macro = folder / 'fixture.swp'
 macro.write_bytes(b'Unused macro fixture; the lock prevents CAD startup')
@@ -45,7 +59,7 @@ case('duplicate argument', [model, '/input:' + str(model)], 1, 'both by name and
 (folder/'not-empty/keep.txt').write_text('existing user data', encoding='utf8')
 
 # An exclusive sentinel guarantees these valid INIs stop before touching COM.
-lock = Path(tempfile.gettempdir())/'SolidWorks_AirDuctDrawings.lock'
+lock = Path(tempfile.gettempdir())/lock_name
 try:
     with lock.open('x', encoding='utf-16') as stream:
         stream.write('launcher-contract-test')
@@ -61,6 +75,17 @@ try:
         case('INI ' + encoding + ' and busy lock', [model, ini], 1, 'Another launcher is running')
         assert lock.read_text('utf-16') == 'launcher-contract-test'
     case('background accepts parameters before lock', [model, ini, '/background'],
+         1, 'Another launcher is running')
+    for value in ['0', '1']:
+        case('suppression filter ' + value, [model, ini, '/excludesuppressed:' + value],
+             1, 'Another launcher is running')
+    for value in ['', 'true', 'false', '2']:
+        case('invalid suppression filter ' + repr(value), [model, ini, '/excludesuppressed:' + value],
+             1, 'ExcludeSuppressed must be 0 or 1')
+    filter_ini = folder/'suppression.ini'
+    filter_ini.write_text('ExcludeSuppressed=invalid\r\n', encoding='utf-16')
+    case('invalid INI suppression filter', [model, filter_ini], 1, 'ExcludeSuppressed must be 0 or 1')
+    case('CLI overrides invalid INI suppression filter', [model, filter_ini, '/excludesuppressed:0'],
          1, 'Another launcher is running')
     case('runtime does not require Python', [model, ini], 1, 'Another launcher is running',
          dict(os.environ, SW_DRAWING_PYTHON=str(folder/'missing-python.exe')))

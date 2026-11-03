@@ -160,6 +160,15 @@ Private Function NativeSymmetryEvidence(ByVal v As SldWorks.View) As Object
     Dim axis As Long, valid As Boolean
     Dim cylinders As New Collection, circles As New Collection, face As SldWorks.Face2, surface As SldWorks.Surface, curve As SldWorks.Curve
     Set result = CreateObject("Scripting.Dictionary")
+    Set model = v.ReferencedDocument
+    If model.GetType = SW_DOC_ASSEMBLY Then
+        result.Add "center", Array(0#, 0#, 0#)
+        result.Add "axes", Array(False, False, False)
+        result.Add "cylinders", cylinders
+        result.Add "circles", circles
+        Set NativeSymmetryEvidence = result
+        Exit Function
+    End If
     Set vertexKeys = CreateObject("Scripting.Dictionary")
     Set edgeKeys = CreateObject("Scripting.Dictionary")
     bounds = Array(SEARCH_INITIAL_LIMIT, SEARCH_INITIAL_LIMIT, SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT)
@@ -409,7 +418,7 @@ Private Sub DeduplicateNativeDimensions(ByVal d As SldWorks.ModelDoc2, ByVal sym
                 If seen.Exists(key) Then
                     kept = seen(key)
                     If Abs(value - CDbl(kept(1))) <= LEADER_VALUE_TOLERANCE_M Then
-                        Set audit = fs.OpenTextFile(runDir & NATIVE_AUDIT_FILENAME, FILE_FOR_APPENDING, True, FILE_UNICODE)
+                        Set audit = fs.OpenTextFile(fs.BuildPath(runDir, NATIVE_AUDIT_FILENAME), FILE_FOR_APPENDING, True, FILE_UNICODE)
                         audit.WriteLine CStr(jobNumber) & vbTab & v.Name & vbTab & display.GetNameForSelection & vbTab & CStr(kept(0)) & vbTab & key
                         audit.Close
                         Set ann = display.GetAnnotation

@@ -21,7 +21,7 @@ names = ['UseCoordinateDots', 'CoordinateMarkerPadding', 'CoordinateTextCenter',
          'CompatiblePackCoordinateSide', 'CoordinateRegionEdge', 'NativeBoundsInside',
          'NativeBoxesOverlap', 'NativeLeaderCrossesBox', 'NativeIntervalKey',
          'NativePointKey', 'NativeReflectedPoint', 'NativePairKey', 'NativeDirectionKey',
-         'NativeTextBounds', 'NativeExpandBounds', 'NativeProtectedSpan']
+         'NativeTextBounds', 'NativeExpandBounds', 'NativeProtectedSpan', 'OppositeViewTransform', 'SixPrimaryOrientation', 'HolePatternShape', 'QuarterTurnPoint', 'OpenBoreSlotPlan', 'ProfileSegmentAxis', 'ProfileNotch', 'ProfileRoot', 'ProfilePolygonLocation', 'ProfilePointInMaterial', 'ProfileLineCutsMaterial', 'ProfileBaseClear', 'ProfileReferenceWitness']
 routines = []
 for name in names:
     body = re.search(r'(?ms)^Private (Function|Sub) ' + name + r'\(.*?^End (?:Function|Sub)', source)[0]
@@ -78,6 +78,14 @@ Function Plans(ByVal count, ByVal spacing, ByVal span)
     Set Plans = result
 End Function
 
+Function ProfileNode(ByVal x, ByVal y)
+    Dim node
+    Set node = CreateObject("Scripting.Dictionary")
+    node.Add "x", x
+    node.Add "y", y
+    Set ProfileNode = node
+End Function
+
 Class NativeTextDataStub
     Public Text, Segment
     Public Function GetTextCount()
@@ -108,7 +116,7 @@ Class NativeTextDataStub
 End Class
 
 Sub Main()
-    Dim items, plan, used, bounds, number, coordinates, record, center, values, perps, i, pairs, pair, textData
+    Dim items, plan, used, bounds, number, coordinates, record, center, values, perps, i, pairs, pair, textData, shape, polygon, loops
     Check Abs(GOST_ARROW_HEAD_LENGTH_M - 0.0025) < 0.0000001, "Arrow length"
     Check Abs(GOST_WITNESS_EXTENSION_M - 0.002) < 0.0000001, "Witness overrun"
     Check COORDINATE_LANE_PITCH_M >= 0.007, "Row pitch"
@@ -196,6 +204,31 @@ Sub Main()
     Check NativeIntervalKey(0.01, 0.02, 0, False) <> NativeIntervalKey(0.03, 0.04, 0, False), "Equal lengths at different source coordinates grouped"
     Check NativeIntervalKey(0, 0.001354, 0, True) = NativeIntervalKey(-0.001354, 0, 0, True), "Near-origin mirror intervals did not group"
     Check NativePairKey(Array(1, 2, 3), Array(4, 5, 6)) = NativePairKey(Array(4, 5, 6), Array(1, 2, 3)), "Reference order changes geometric identity"
+    shape = OpenBoreSlotPlan(Array(-0.006, 0.0154, 0.006, 0.0234), Array(0, 0, 0), 0.0194)
+    Check ProfileNotch(ProfileNode(0.02, 0), ProfileNode(0.02, 0.01), ProfileNode(0.04, 0.01), ProfileNode(0.04, 0), 1), "A rectangular recess was not classified as a slot"
+    Check ProfileNotch(ProfileNode(-0.02, 0), ProfileNode(-0.02, 0.01), ProfileNode(-0.04, 0.01), ProfileNode(-0.04, 0), -1), "Mirroring changed the geometric role of a slot"
+    Check ProfileNotch(ProfileNode(0, 0.02), ProfileNode(-0.01, 0.02), ProfileNode(-0.01, 0.04), ProfileNode(0, 0.04), 1), "A quarter turn changed the geometric role of a slot"
+    Check Not ProfileNotch(ProfileNode(0.02, 0), ProfileNode(0.02, -0.01), ProfileNode(0.04, -0.01), ProfileNode(0.04, 0), 1), "An outward tab was classified as a slot"
+    Check Not ProfileNotch(ProfileNode(0.02, 0), ProfileNode(0.02, 0.01), ProfileNode(0.04, 0.01), ProfileNode(0.04, 0.002), 1), "An open step was incorrectly treated as a closed rectangular recess"
+    Check Not IsEmpty(shape), "Open circular keyway was not recognized"
+    Check Abs(shape(5) - 0.012) < 0.000001, "Open keyway width is incorrect"
+    Check Abs(shape(6) - (0.0234 - Sqr(0.0194 ^ 2 - 0.006 ^ 2))) < 0.000001, "Keyway depth still includes the rectangle inside the bore"
+    shape = OpenBoreSlotPlan(Array(-0.006, -0.0234, 0.006, -0.0154), Array(0, 0, 0), 0.0194)
+    Check Not IsEmpty(shape) And shape(2) < shape(1), "Negative radial keyway direction was lost"
+    shape = OpenBoreSlotPlan(Array(0.002, 0.0154, 0.014, 0.0234), Array(0, 0, 0), 0.0194)
+    Check IsEmpty(shape), "An off-center rectangle was incorrectly recognized as a radial keyway"
+    values = OppositeViewTransform(Array(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.2, 0.3, 0.4, 0, 0, 0))
+    shape = HolePatternShape(Array(Array(0, -0.035355339, -0.035355339), Array(0, -0.035355339, 0.035355339), Array(0, 0.035355339, -0.035355339), Array(0, 0.035355339, 0.035355339)), Array(1, 0, 0))
+    Check shape(PATTERN_REGULAR_INDEX) And Abs(shape(PATTERN_RADIUS_INDEX) - 0.05) < 0.000001, "A square bolt pattern was not recognized as a 100 mm pitch circle"
+    shape = HolePatternShape(Array(Array(0.042, 0, -0.034), Array(0.07, 0, -0.034), Array(0.042, 0, 0.034), Array(0.07, 0, 0.034)), Array(0, 1, 0))
+    Check Not shape(PATTERN_REGULAR_INDEX), "An unequal rectangular pattern was incorrectly called equally spaced on a circle"
+    shape = QuarterTurnPoint(Array(0.03, 0.02, 0), Array(0.01, 0.01, 0))
+    Check Abs(shape(0)) < 0.000001 And Abs(shape(1) - 0.03) < 0.000001, "Local sketch rotation did not preserve the feature center"
+    Check values(0) = -1 And values(4) = 1 And values(8) = -1, "The opposite view must reverse right and depth while preserving up"
+    Check values(9) = 0 And values(10) = 0 And values(11) = 0 And values(12) = 1, "Drawing translation and scale leaked into the named model orientation"
+    values = OppositeViewTransform(values)
+    Check values(0) = 1 And values(4) = 1 And values(8) = 1, "Opposite projection is not a reversible proper rotation"
+    Check SixPrimaryOrientation("*Right", False) = "*Top" And SixPrimaryOrientation("*Right", True) = "*Front", "Six-view primary directions repeat the principal view"
     bounds = NativeProtectedSpan(Array(0, 0), Array(0.01, 0), GOST_ARROW_LENGTH_M)
     Check Abs(bounds(0) + GOST_ARROW_LENGTH_M) < MIN_PROJECTED_EXTENT_M And Abs(bounds(2) - 0.01 - GOST_ARROW_LENGTH_M) < MIN_PROJECTED_EXTENT_M, "Future outside arrow tails were not reserved"
     bounds = NativeProtectedSpan(Array(0.076, 0.124), Array(0.076, 0.1516), GOST_WITNESS_EXTENSION_M)
@@ -204,11 +237,32 @@ Sub Main()
     textData.Text = " <MOD-DIAM> "
     bounds = NativeTextBounds(textData)
     Check bounds(2) - bounds(0) < 0.01, "A native diameter symbol was counted as a ten-character token"
-    textData.Text = " 6,39 "
+    textData.Text = " 6 "
     textData.Segment = Array(0, 0, -1, -1, 0, 0, 0, 0.0093, 0, 0)
     bounds = NativeTextBounds(textData)
     Check Abs(bounds(2) - bounds(0) - 0.0093) < 0.000001, "Native leader shoulder width was ignored"
-    WScript.Echo "PASS: GOST markers, spacing, lane capacity, detail bounds, and inclined leader geometry"
+    textData.Text = " 6,39 "
+    bounds = NativeTextBounds(textData)
+    Check bounds(2) - bounds(0) > 0.0093, "A short shoulder truncated the longer text bounds"
+    polygon = Array(Array(0,0),Array(0.004,0),Array(0.004,0.004),Array(0.006,0.004),Array(0.006,0),Array(0.01,0),Array(0.01,0.01),Array(0,0.01))
+    loops = Array(polygon)
+    Check ProfilePointInMaterial(Array(0.002,0.002),loops), "Profile solid land was missed"
+    Check Not ProfilePointInMaterial(Array(0.005,0.002),loops), "An open notch was classified as material"
+    Check Not ProfilePointInMaterial(Array(0.004,0.002),loops), "A boundary was classified as solid interior"
+    Check Not ProfileLineCutsMaterial(Array(0.004,0.004),Array(0.004,-0.003),loops), "A lower witness along the slot wall was rejected"
+    Check ProfileLineCutsMaterial(Array(0.004,0.004),Array(0.004,0.013),loops), "An upper witness crossing the part was accepted"
+    Check ProfileLineCutsMaterial(Array(0.003,0.002),Array(0.007,0.002),loops), "A line with its midpoint in a void concealed two material crossings"
+    Check Not ProfileLineCutsMaterial(Array(0.005,0.002),Array(0.005,-0.003),loops), "A leader through the open mouth was rejected"
+    Check ProfileLineCutsMaterial(Array(0.005,0.002),Array(0.009,-0.003),loops), "A diagonal leader cutting the slot wall was accepted"
+    Check ProfileLineCutsMaterial(Array(0.004,0.00400000000001),Array(0.007,0.00400000000001),loops), "Native floor rounding concealed an overrun beyond the opposite wall"
+    Check Not ProfileBaseClear(Array(0.004,0.004),Array(0.004,0),1,0.0055,loops), "Witness overrun into the opposite slot wall was accepted"
+    Check ProfileReferenceWitness(Array(0.004,0.004),Array(-0.01,0.004),Array(0.004,0.004),Array(0.004,0),1), "External extension at its model coordinate was rejected"
+    Check Not ProfileReferenceWitness(Array(0.004,0.002),Array(-0.01,0.002),Array(0.004,0.004),Array(0.004,0),1), "An arbitrary horizontal leader was treated as an extension"
+    Check Not ProfileReferenceWitness(Array(0.004,0.004),Array(-0.01,0.003),Array(0.004,0.004),Array(0.004,0),1), "A diagonal leader was treated as an extension"
+    Check Not ProfileReferenceWitness(Array(0.004,0.004),Array(0.004,0),Array(0.004,0.004),Array(0.004,0),1), "A dimension baseline was treated as an extension"
+    polygon = Array(Array(0.00498,0),Array(0.005,0),Array(0.005,0.01),Array(0.00498,0.01))
+    Check ProfileLineCutsMaterial(Array(0,0.005),Array(0.02,0.005),Array(polygon)), "A narrow land between sampling positions was missed"
+    WScript.Echo "PASS: GOST markers, spacing, lane capacity, detail bounds, leaders, and exact profile-material intersections"
 End Sub
 
 Main

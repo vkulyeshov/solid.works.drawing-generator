@@ -76,6 +76,10 @@ Const CHARSET_UTF8 = "utf-8"
 Const CHARSET_UTF16_LE = "unicode"
 Const CHARSET_UTF16_BE = "unicodeFFFE"
 Const CHARSET_BYTE_INSPECTION = "iso-8859-1"
+Const SUPPRESSION_FILTER_DISABLED = "0"
+Const SUPPRESSION_FILTER_ENABLED = "1"
+Const SOURCE_VALIDATION_DIRTY = "0"
+Const SOURCE_VALIDATION_CLEAN = "1"
 
 ' Progress and checkpoint wire values
 Const STATE_STARTING = "STARTING"
@@ -117,6 +121,7 @@ Dim currentStage
 Dim backgroundMode, backgroundVerified, backgroundPID
 Dim existingPIDAtStart, existingAliveAtEnd
 Dim paperFormat, paperOrientation, drawingTemplate, templatesDirectory
+Dim excludeSuppressed
 
 Sub Main()
     Set fso = CreateObject("Scripting.FileSystemObject")
@@ -181,7 +186,7 @@ Sub ControllerMain()
     End If
     For Each key In named
         Select Case LCase(key)
-            Case "input", "ini", "out", "background", "reset", "format", "orientation", "template", "templates", "macro"
+            Case "input", "ini", "out", "background", "reset", "format", "orientation", "template", "templates", "macro", "excludesuppressed"
             Case Else
                 Err.Raise vbObjectError + ERR_ARGUMENTS, , "Unknown option: /" & key & ". Use /help."
         End Select
@@ -245,6 +250,7 @@ Sub ControllerMain()
     currentStage = "reading INI"
     content = ReadIniText(iniFile)
     ResolveDrawingSettings content
+    excludeSuppressed = ResolveSuppressionFilter(content)
     currentStage = "session setup"
     lockFile = fso.BuildPath(fso.GetSpecialFolder(SPECIAL_FOLDER_TEMP), SHARED_LOCK_FILENAME)
     AcquireLock
@@ -282,6 +288,7 @@ Sub ControllerMain()
         & "LauncherScriptDirectory=" & scriptDir & vbCrLf _
         & "PaperFormat=" & paperFormat & vbCrLf & "PaperOrientation=" & paperOrientation & vbCrLf _
         & "TemplatesDirectory=" & templatesDirectory & vbCrLf & "DrawingTemplate=" & drawingTemplate & vbCrLf _
+        & "ExcludeSuppressed=" & excludeSuppressed & vbCrLf _
         & "LauncherBackground=0" & vbCrLf & "LauncherForbiddenPID=0" & vbCrLf _
         & "ShowSummary=0" & vbCrLf
     WriteText fso.BuildPath(sessionDir, SETTINGS_FILENAME), content
@@ -302,6 +309,7 @@ Sub ControllerMain()
     Say "Input: " & inputFile
     Say "INI:   " & iniFile
     Say "Paper: " & paperFormat & "; template: " & drawingTemplate
+    Say "Exclude suppressed: " & excludeSuppressed
     If backgroundMode Then
         Say "Mode: background (separate SolidWorks instance)"
     End If
@@ -443,6 +451,18 @@ Sub ResolveDrawingSettings(ByVal content)
     End If
 End Sub
 
+Function ResolveSuppressionFilter(ByVal content)
+    Dim value
+    value = IniSetting(content, "ExcludeSuppressed", SUPPRESSION_FILTER_DISABLED)
+    If named.Exists("excludesuppressed") Then
+        value = Trim(named("excludesuppressed"))
+    End If
+    If value <> SUPPRESSION_FILTER_DISABLED And value <> SUPPRESSION_FILTER_ENABLED Then
+        Err.Raise vbObjectError + ERR_ARGUMENTS, , "ExcludeSuppressed must be 0 or 1 (/excludesuppressed:0|1)."
+    End If
+    ResolveSuppressionFilter = value
+End Function
+
 Function SettingsPath(ByVal value, ByVal directory)
     If InStr(value, ":") = 0 And Left(value, 2) <> "\\" Then
         value = fso.BuildPath(directory, value)
@@ -507,6 +527,7 @@ End Sub
 
 Sub WorkerMain()
     Dim context, sw, doc, active, spec, docType, ok
+    Dim inputWasClean
     currentStage = "worker context"
     Set context = ReadKeyValues(fso.BuildPath(sessionDir, CONTEXT_FILENAME))
     RecordControllerPID
@@ -558,13 +579,15 @@ Sub WorkerMain()
         End If
     End If
     currentStage = "checking active model"
-    If doc.GetSaveFlag Then
+    inputWasClean = (doc.GetSaveFlag = False)
+    If inputWasClean = False Then
         If fso.FileExists(fso.BuildPath(outputDir, CHECKPOINT_FILENAME)) Then
             WorkerProgress "Input has unsaved changes; resuming saved snapshot without saving input"
         Else
             Err.Raise vbObjectError + ERR_UNSAVED_INPUT, , "Input has unsaved changes. Save or discard them in SolidWorks before creating a new snapshot."
         End If
     End If
+    RecordSourceValidation inputFile, CStr(sw.GetProcessID), inputWasClean
     currentStage = "making model visible"
     doc.Visible = True
     currentStage = "ActivateDoc"
@@ -584,6 +607,20 @@ Sub WorkerMain()
         Err.Raise vbObjectError + ERR_RUN_MACRO, , "RunMacro failed. See SolidWorks and launcher diagnostics."
     End If
     CompleteFromProgress
+End Sub
+
+Sub RecordSourceValidation(ByVal path, ByVal pid, ByVal wasClean)
+    Dim runtimeIni, content, value
+    value = SOURCE_VALIDATION_DIRTY
+    If wasClean Then
+        value = SOURCE_VALIDATION_CLEAN
+    End If
+    runtimeIni = fso.BuildPath(sessionDir, SETTINGS_FILENAME)
+    content = ReadUnicode(runtimeIni) & vbCrLf _
+        & "LauncherSourceValidatedPath=" & path & vbCrLf _
+        & "LauncherSourceValidatedPID=" & pid & vbCrLf _
+        & "LauncherSourceWasClean=" & value & vbCrLf
+    WriteText runtimeIni, content
 End Sub
 
 Function WorkerErrorExitCode(ByVal errorNumber)
@@ -949,6 +986,7 @@ Sub Usage()
     WScript.Echo "cscript //nologo launcher.vbs MODEL [INI] [OUTPUT]"
     WScript.Echo "cscript //nologo launcher.vbs /input:MODEL [/ini:INI] [/out:OUTPUT]"
     WScript.Echo "Drawing options: /format:A4|A3 /orientation:landscape|portrait /template:FILE /templates:DIRECTORY"
+    WScript.Echo "Optional suppression filter: /excludesuppressed:1 excludes suppressed components and descendants; 0 disables it (default)."
     WScript.Echo "Without INI format keys: A3 landscape, templates\A3.landscape.drwdot. Explicit template controls orientation."
     WScript.Echo "Add /background to keep a separate SolidWorks window outside the screen and exit when finished."
     WScript.Echo "Quote arguments containing spaces. Default INI is beside this script."

@@ -65,6 +65,7 @@ Private Sub ValidateNativeViewIsolation(ByVal display As SldWorks.DisplayDimensi
         If v.Name <> owner Then
             bounds = v.GetOutline
             If NativeBoxesOverlap(NativeTextBounds(data), bounds, 0) Then
+                Log "NATIVE OVERLAP owner=" & owner & "; other=" & v.Name & "; text=" & Join(NativeTextBounds(data), ",") & "; other bounds=" & Join(bounds, ",")
                 Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Dimension text overlaps another view: " & display.GetNameForSelection
             End If
             For index = 0 To data.GetLineCount - 1
@@ -75,6 +76,35 @@ Private Sub ValidateNativeViewIsolation(ByVal display As SldWorks.DisplayDimensi
             Next index
         End If
     Next item
+End Sub
+
+Private Sub ReserveIsometricSpace(ByVal d As SldWorks.ModelDoc2, ByVal views As Collection, ByVal work As Variant)
+    Dim item As Variant, view As SldWorks.View, matrix As Variant, bounds As Variant, position As Variant
+    Dim axis As Long, orthographic As Boolean, shift As Double
+    For Each item In views
+        Set view = item
+        If view.GetFirstDisplayDimension5 Is Nothing Then
+            matrix = view.ModelToViewTransform.ArrayData
+            orthographic = False
+            For axis = MATRIX_XZ_INDEX To MATRIX_ZZ_INDEX Step MATRIX_ROW_STRIDE
+                If Abs(matrix(axis)) >= 1 - DIRECTION_ZERO_TOLERANCE Then
+                    orthographic = True
+                End If
+            Next axis
+            If Not orthographic Then
+                bounds = view.GetOutline
+                shift = work(OUTLINE_RIGHT_INDEX) - LEADER_GEOMETRY_CLEARANCE_M - bounds(OUTLINE_RIGHT_INDEX)
+                If shift > DIMENSION_GEOMETRY_GAP_M Then
+                    position = view.Position
+                    position(SCREEN_X_AXIS_INDEX) = position(SCREEN_X_AXIS_INDEX) + shift
+                    view.Position = position
+                    Log "NATIVE LAYOUT isometric shifted right by " & shift * MILLIMETRES_PER_METRE & " mm to release dimension space"
+                End If
+            End If
+        End If
+    Next item
+    d.ForceRebuild3 False
+    d.GraphicsRedraw2
 End Sub
 
 Private Function NativeViewRegion(ByVal own As SldWorks.View, ByVal views As Collection, ByVal work As Variant) As Variant
@@ -181,7 +211,8 @@ Private Sub AddNativeSymmetryCenterline(ByVal d As SldWorks.ModelDoc2, ByVal v A
                 endpoints = Empty
             End If
             If Not IsEmpty(endpoints) Then
-                Set audit = fs.OpenTextFile(runDir & NATIVE_CENTERLINES_FILENAME, FILE_FOR_APPENDING, True, FILE_UNICODE)
+                segment.Color = DIMENSION_COLOR_BLACK
+                Set audit = fs.OpenTextFile(fs.BuildPath(runDir, NATIVE_CENTERLINES_FILENAME), FILE_FOR_APPENDING, True, FILE_UNICODE)
                 audit.WriteLine CStr(jobNumber) & vbTab & v.Name & vbTab & Join(endpoints, vbTab)
                 audit.Close
             End If
@@ -196,18 +227,21 @@ Private Sub FinishNativeDimensionLayout(ByVal d As SldWorks.ModelDoc2)
     Dim ann As SldWorks.Annotation, before As Object, value As Double, count As Long, baseRegion As Variant
     Dim recordViews As Collection, rows As Collection, index As Long, orderedLabels As Collection
     Dim allViews As Collection, regions As Object, dimensionRegions As Object, symmetry As Object, ownRegion As Variant, regionFile As Object
-    Dim dimensionOutlines As Object, dimensionOwners As Object
+    Dim dimensionOutlines As Object, dimensionOwners As Object, otherLabels As Collection, other As Variant
+    Dim planarLines As Collection
+    If SixViewMode() And Not profileRoleDrawing Then
+        AssignSixViewDimensions d
+    End If
     For Each sheetName In AsDrawing(d).GetSheetNames
         AsDrawing(d).ActivateSheet CStr(sheetName)
         AsDrawing(d).ActivateView ""
         Set sheet = AsDrawing(d).GetCurrentSheet
         properties = sheet.GetProperties
         region = Array(LEADER_WORK_LEFT_M, LEADER_WORK_BOTTOM_M, properties(SHEET_WIDTH_PROPERTY) - LEADER_WORK_EDGE_MARGIN_M, properties(SHEET_HEIGHT_PROPERTY) - LEADER_WORK_EDGE_MARGIN_M)
-        baseRegion = Array(region(0) + LEADER_BASE_SAFETY_MARGIN_M, region(1) + LEADER_BASE_SAFETY_MARGIN_M, region(2) - LEADER_BASE_SAFETY_MARGIN_M, region(3) - LEADER_BASE_SAFETY_MARGIN_M)
-        baseRegion(3) = MinD(baseRegion(3), properties(SHEET_HEIGHT_PROPERTY) - LEADER_STAMP_TOP_MARGIN_M - LEADER_BASE_SAFETY_MARGIN_M)
         Set records = New Collection
         Set recordViews = New Collection
         Set rows = New Collection
+        Set planarLines = New Collection
         Set obstacles = New Collection
         Set labels = New Collection
         Set lines = New Collection
@@ -219,25 +253,41 @@ Private Sub FinishNativeDimensionLayout(ByVal d As SldWorks.ModelDoc2)
         Set dimensionOwners = CreateObject("Scripting.Dictionary")
         Set v = AsDrawing(d).GetFirstView.GetNextView
         Do While Not v Is Nothing
+            If Not planarDimensionRequests Is Nothing Then
+                v.DisableAutoUpdate = False
+                v.UpdateViewDisplayGeometry
+            End If
             allViews.Add v
             Set v = v.GetNextView
         Loop
         If allViews.Count = 0 Then
             Exit Sub
         End If
-        ReserveLowerViewSpace d, allViews, region
+        If profileRoleDrawing Then
+            ReserveProfileDimensionSpace d, allViews, region
+        Else
+            ReserveLowerViewSpace d, allViews, region
+            ReserveIsometricSpace d, allViews, region
+        End If
+        CacheProfileContours allViews
         Set v = allViews(1)
         Set symmetry = NativeSymmetryEvidence(v)
-        DeduplicateNativeDimensions d, symmetry
+        If Not SixViewMode() And Not profileRoleDrawing Then
+            DeduplicateNativeDimensions d, symmetry
+        End If
         PrepareNativeCalloutText d
         For Each item In allViews
             Set v = item
             ownRegion = NativeViewRegion(v, allViews, region)
             regions.Add v.Name, ownRegion
-            Set regionFile = fs.OpenTextFile(runDir & NATIVE_REGIONS_FILENAME, FILE_FOR_APPENDING, True, FILE_UNICODE)
+            Set regionFile = fs.OpenTextFile(fs.BuildPath(runDir, NATIVE_REGIONS_FILENAME), FILE_FOR_APPENDING, True, FILE_UNICODE)
             regionFile.WriteLine CStr(jobNumber) & vbTab & v.Name & vbTab & Join(ownRegion, vbTab)
             regionFile.Close
         Next item
+        If Not planarDimensionRequests Is Nothing Then
+            FinishPlanarDimensionLayout d, allViews, regions, region
+            Exit Sub
+        End If
         obstacles.Add Array(region(0), properties(SHEET_HEIGHT_PROPERTY) - LEADER_STAMP_TOP_MARGIN_M, LEADER_STAMP_WIDTH_M, properties(SHEET_HEIGHT_PROPERTY))
         Set v = AsDrawing(d).GetFirstView.GetNextView
         d.ClearSelection2 True
@@ -276,30 +326,59 @@ Private Sub FinishNativeDimensionLayout(ByVal d As SldWorks.ModelDoc2)
             Set v = recordViews(index)
             ownRegion = regions(v.Name)
             baseRegion = Array(ownRegion(0) + LEADER_BASE_SAFETY_MARGIN_M, ownRegion(1) + LEADER_BASE_SAFETY_MARGIN_M, ownRegion(2) - LEADER_BASE_SAFETY_MARGIN_M, ownRegion(3) - LEADER_BASE_SAFETY_MARGIN_M)
-            baseRegion(3) = MinD(baseRegion(3), properties(SHEET_HEIGHT_PROPERTY) - LEADER_STAMP_TOP_MARGIN_M - LEADER_BASE_SAFETY_MARGIN_M)
-            PlaceNativeDimensionBase display, v, baseRegion, obstacles, rows
-            ClampNativeDimension display, baseRegion
+            If PlanarOwnsDimension(display) Then
+                If planarLines Is Nothing Then
+                    Set planarLines = New Collection
+                End If
+                PlacePlanarDimensionBase d, display, v, baseRegion, planarLines, rows
+            ElseIf ProfileOwnsDimension(display) Then
+                PlaceProfileDimensionBase d, display, v
+            Else
+                PlaceNativeDimensionBase display, v, baseRegion, obstacles, rows
+                ClampNativeDimension display, baseRegion
+            End If
+            If NativePlacementSide(display) = NATIVE_LABEL_SIDE_RIGHT And display.Type2 = SW_DIMENSION_DIAMETER Then
+                PlaceDirectedPitchLabel d, display, v, baseRegion
+            End If
+        Next index
+        d.GraphicsRedraw2
+        For index = 1 To records.Count
+            Set display = records(index)
+            Set v = recordViews(index)
+            If display.Type2 = SW_DIMENSION_LINEAR Then
+                ' Stabilize native bases before reserving their tails and witnesses.
+                If PlanarOwnsDimension(display) Then
+                    StabilizePlanarDimensionText d, display, v
+                ElseIf NativePlacementSide(display) = NATIVE_LABEL_SIDE_BELOW And Not ProfileLocalBase(display) Then
+                    PlaceCenteredBelowDimension d, display, v
+                Else
+                    display.CenterText = False
+                    display.OffsetText = True
+                End If
+            End If
         Next index
         d.GraphicsRedraw2
         For Each item In records
             Set display = item
-            If display.Type2 = SW_DIMENSION_LINEAR Then
-                ' Stabilize native bases before reserving their tails and witnesses.
-                display.CenterText = False
-                display.OffsetText = True
-            End If
-        Next item
-        d.GraphicsRedraw2
-        For Each item In records
-            Set display = item
             NativeCollectLines display, lines, True
+            If NativeFixedLabel(display) Then
+                If NativeBoxesOverlap(NativeTextBounds(display.GetDisplayData), dimensionOutlines(display.GetNameForSelection), LEADER_GEOMETRY_CLEARANCE_M) And Not (PlanarOwnsDimension(display) And display.Type2 = SW_DIMENSION_ANGULAR) Then
+                    Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Directed dimension text overlaps its own view."
+                End If
+                labels.Add NativeTextBounds(display.GetDisplayData)
+            End If
         Next item
         Set orderedLabels = NativeLabelsByWidth(records)
         For Each item In orderedLabels
             Set display = item
             Log "NATIVE LABEL " & display.GetNameForSelection
             ownRegion = dimensionRegions(display.GetNameForSelection)
-            If Not KeepReadableNativeText(display, ownRegion, obstacles, labels, lines) Then
+            outline = dimensionOutlines(display.GetNameForSelection)
+            ' Side policies guide the first search pass; the isolated view region
+            ' remains available when that preferred side cannot hold the text.
+            If NativeFixedLabel(display) Then
+                ' These directed labels were positioned and reserved before the other labels.
+            ElseIf Not KeepReadableNativeText(display, ownRegion, obstacles, labels, lines, outline) Then
                 PlaceNativeDimensionLabel d, display, ownRegion, obstacles, labels, lines, dimensionOutlines(display.GetNameForSelection)
             End If
         Next item
@@ -316,6 +395,18 @@ Private Sub FinishNativeDimensionLayout(ByVal d As SldWorks.ModelDoc2)
                 Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Dimension graphics outside the drawing area: " & display.GetNameForSelection & "; bounds=" & Join(outline, ",")
             End If
             ValidateNativeViewIsolation display, CStr(dimensionOwners(display.GetNameForSelection)), allViews
+            If ProfileDimensionCutsMaterial(display) Then
+                Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Dimension graphics cross profile material: " & display.GetNameForSelection
+            End If
+            Set otherLabels = New Collection
+            For Each other In records
+                If other.GetNameForSelection <> display.GetNameForSelection Then
+                    otherLabels.Add NativeTextBounds(other.GetDisplayData)
+                End If
+            Next other
+            If NativeLinesHitLabels(display, otherLabels, True) Then
+                Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Dimension graphics cross another dimension's text: " & display.GetNameForSelection
+            End If
         Next item
         count = count + records.Count
         For Each item In allViews
@@ -323,6 +414,10 @@ Private Sub FinishNativeDimensionLayout(ByVal d As SldWorks.ModelDoc2)
             AddNativeSymmetryCenterline d, v, symmetry
         Next item
     Next sheetName
+    If SixViewMode() And Not profileRoleDrawing Then
+        RenderHolePatternCircles d
+        AuditFinalSixViews d
+    End If
     Log "NATIVE LEADERS dimensions=" & count & "; all graphics inside the drawing area"
 End Sub
 

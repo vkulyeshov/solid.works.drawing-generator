@@ -25,6 +25,24 @@ Private Function Setting(ByVal key As String, ByVal fallback As String) As Strin
     End If
 End Function
 
+Private Function SnapshotSourceApproved(ByVal dirty As Boolean, ByVal ownedReadOnlyInput As Boolean, ByVal path As String, ByVal processID As String) As Boolean
+    ' Some SolidWorks COM booleans arrive as 1 rather than VBA's -1.
+    ' Compare explicitly; bitwise Not would turn a true value of 1 into -2.
+    If dirty = False Or ownedReadOnlyInput <> False Then
+        SnapshotSourceApproved = True
+        Exit Function
+    End If
+    ' The launcher validates before activation can rebuild a previously clean
+    ' model. Accept that validation only for the same document and process.
+    If Setting("LauncherSourceWasClean", SOURCE_VALIDATION_DIRTY) <> SOURCE_VALIDATION_CLEAN Then
+        Exit Function
+    End If
+    If StrComp(Setting("LauncherSourceValidatedPath", ""), path, vbTextCompare) <> 0 Then
+        Exit Function
+    End If
+    SnapshotSourceApproved = (Setting("LauncherSourceValidatedPID", "") = processID)
+End Function
+
 
 
 Private Sub RestorePreferences()

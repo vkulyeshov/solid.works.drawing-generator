@@ -10,15 +10,44 @@ End Function
 
 Private Function CreateDetailProfile(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal x As Double, ByVal y As Double, ByVal paperRadius As Double) As SldWorks.SketchSegment
     Dim sketch As SldWorks.Sketch, util As SldWorks.MathUtility, point As SldWorks.MathPoint, coordinates As Variant
-    AsDrawing(d).ActivateView v.Name
-    d.ClearSelection2 True
+    Dim active As SldWorks.ModelDoc2, error As Long, stage As String, errorNumber As Long, errorText As String
+    Dim manager As SldWorks.SketchManager, oldAddToDB As Boolean
+    Dim target(2) As Double
+    On Error GoTo Failed
+    stage = "drawing activation"
+    Set active = sw.ActivateDoc3(d.GetTitle, False, SW_REBUILD_USER_DECISION, error)
+    stage = "view sketch"
     Set sketch = v.GetSketch
+    If sketch Is Nothing Then
+        Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "The source view has no drawing sketch."
+    End If
+    stage = "sketch transform"
     Set util = sw.GetMathUtility
-    Set point = util.CreatePoint(Array(x, y, 0#))
+    target(0) = x
+    target(1) = y
+    Set point = util.CreatePoint(target)
     Set point = point.MultiplyTransform(sketch.ModelToSketchTransform)
     coordinates = point.ArrayData
+    Log "DETAIL PROFILE COORDINATES sheet=" & x & "," & y & "; sketch=" & coordinates(0) & "," & coordinates(1) & "; view scale=" & v.ScaleDecimal
+    stage = "circle creation"
+    AsDrawing(d).ActivateView v.Name
+    d.ClearSelection2 True
     ' Drawing-view sketch coordinates are unscaled and relative to the view origin.
-    Set CreateDetailProfile = d.SketchManager.CreateCircleByRadius(coordinates(0), coordinates(1), 0, paperRadius / v.ScaleDecimal)
+    Set manager = d.SketchManager
+    oldAddToDB = manager.AddToDB
+    manager.AddToDB = True
+    Set CreateDetailProfile = manager.CreateCircleByRadius(coordinates(0), coordinates(1), 0, paperRadius / v.ScaleDecimal)
+    manager.AddToDB = oldAddToDB
+    Exit Function
+Failed:
+    errorNumber = Err.Number
+    errorText = Err.Description
+    On Error Resume Next
+    If Not manager Is Nothing Then
+        manager.AddToDB = oldAddToDB
+    End If
+    On Error GoTo 0
+    Err.Raise errorNumber, "CreateDetailProfile", stage & ": " & errorText
 End Function
 
 Private Sub AddSameSheetDimensionDetails(ByVal d As SldWorks.ModelDoc2, ByVal overview As SldWorks.View)
