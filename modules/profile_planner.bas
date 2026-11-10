@@ -71,7 +71,7 @@ Private Function ProfileLoopPoints(ByVal boundary As SldWorks.Loop2) As Collecti
         If first Is Nothing Or last Is Nothing Then
             Exit Function
         End If
-        If Not ProfilePointClose(first.GetPoint, last.GetPoint) Then
+        If Not ProfileTopologyPointClose(first.GetPoint, last.GetPoint) Then
             segments.Add Array(first.GetPoint, last.GetPoint)
         End If
     Next item
@@ -89,10 +89,10 @@ Private Function ProfileLoopPoints(ByVal boundary As SldWorks.Loop2) As Collecti
         For index = 1 To segments.Count
             If Not used.Exists(index) Then
                 segment = segments(index)
-                If ProfilePointClose(point, segment(0)) Then
+                If ProfileTopologyPointClose(point, segment(0)) Then
                     point = segment(1)
                     found = True
-                ElseIf ProfilePointClose(point, segment(1)) Then
+                ElseIf ProfileTopologyPointClose(point, segment(1)) Then
                     point = segment(0)
                     found = True
                 End If
@@ -106,10 +106,21 @@ Private Function ProfileLoopPoints(ByVal boundary As SldWorks.Loop2) As Collecti
             Exit Function
         End If
     Loop
-    If Not ProfilePointClose(point, result(1)) Then
+    If Not ProfileTopologyPointClose(point, result(1)) Then
         Exit Function
     End If
     Set ProfileLoopPoints = result
+End Function
+
+' A dimensional tolerance must not join different vertices in a narrow slot.
+Private Function ProfileTopologyPointClose(ByVal a As Variant, ByVal b As Variant) As Boolean
+    Dim axis As Long
+    ProfileTopologyPointClose = True
+    For axis = SCREEN_X_AXIS_INDEX To SPACE_LAST_AXIS_INDEX
+        If Abs(a(axis) - b(axis)) > PROFILE_TOPOLOGY_TOLERANCE_M Then
+            ProfileTopologyPointClose = False
+        End If
+    Next axis
 End Function
 
 Private Function ProfileProjection(ByVal points As Collection, ByVal view As SldWorks.View) As Collection
@@ -227,6 +238,12 @@ Private Function PlanProfileDimensions(ByVal outer As Collection, ByVal openings
     Dim lowX As Object, highX As Object, lowY As Object, highY As Object
     Dim area As Double, index As Long, offset As Long, axis As Long, role As String, feature As String, key As Variant
     Dim request As Object, winner As Object, priority As Double, best As Double, rootA As String, rootB As String, visited As Object
+    Dim panelPlan As Collection
+    Set panelPlan = PlanPanelDimensions(outer, openings)
+    If Not panelPlan Is Nothing Then
+        Set PlanProfileDimensions = panelPlan
+        Exit Function
+    End If
     Set candidates = CreateObject("Scripting.Dictionary")
     Set roles = CreateObject("Scripting.Dictionary")
     Set parents = CreateObject("Scripting.Dictionary")

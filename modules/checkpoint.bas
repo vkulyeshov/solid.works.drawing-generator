@@ -10,7 +10,7 @@ Private Function RenderSettingsSignature() As String
     Dim key As Variant
     RenderSettingsSignature = RENDER_SIGNATURE_PREFIX & paperFormat & "|Template=" & templatePath & "|TemplateStamp=" & FileStamp(templatePath)
     RenderSettingsSignature = RenderSettingsSignature & "|ExcludeSuppressed=" & Setting("ExcludeSuppressed", SUPPRESSION_FILTER_DISABLED)
-    For Each key In Array("Font", "Organization", "AutoDimensions", "DimensionPlanning", "DimensionColor", "NativeDimensions", "OrthographicViews", "DimensionStrategy", "MaxEdgesForAutoDimensions", "ImportModelDimensions", "UpAxis", "StrictDimensionLayout", "DimensionSpacing", "Liter1", "Liter2", "Liter3", "DrawnBy", "DrawnDate", "CheckedBy", "CheckedDate", "TechnicalControlBy", "TechnicalControlDate", "NormControlBy", "NormControlDate", "ApprovedBy", "ApprovedDate")
+    For Each key In Array("Font", "Organization", "AutoDimensions", "DimensionPlanning", "ProfileSheets", "DimensionColor", "NativeDimensions", "OrthographicViews", "DimensionStrategy", "MaxEdgesForAutoDimensions", "ImportModelDimensions", "UpAxis", "StrictDimensionLayout", "DimensionSpacing", "Liter1", "Liter2", "Liter3", "DrawnBy", "DrawnDate", "CheckedBy", "CheckedDate", "TechnicalControlBy", "TechnicalControlDate", "NormControlBy", "NormControlDate", "ApprovedBy", "ApprovedDate")
         RenderSettingsSignature = RenderSettingsSignature & "|" & CStr(key) & "=" & Setting(CStr(key), "")
     Next key
 End Function

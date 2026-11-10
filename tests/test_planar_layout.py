@@ -4,6 +4,7 @@ import math
 from pathlib import Path
 import re
 import sys
+from collections import defaultdict
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
@@ -80,6 +81,7 @@ def check(directory):
         assert all(math.isclose(value, number(row[2]), abs_tol=5e-6) for value, row in zip(reconstructed, omitted))
     regions = {row[1]: list(map(number, row[2:6])) for row in rows(directory / 'native-view-regions.tsv')}
     native_lines = []
+    sheet_lines = defaultdict(list)
     arrow_modes = {row[3]: int(row[4]) for row in saved if row[0] == 'ARROWMODE'}
     arrow_geometry = {}
     for row in saved:
@@ -109,7 +111,9 @@ def check(directory):
             polygon = [(arrow[0], arrow[1]),
                        (arrow[0] + length * dx - half_width * dy, arrow[1] + length * dy + half_width * dx),
                        (arrow[0] + length * dx + half_width * dy, arrow[1] + length * dy - half_width * dx)]
-            native_lines.extend([*polygon[i], *polygon[(i + 1) % 3]] for i in range(3))
+            segments = [[*polygon[i], *polygon[(i + 1) % 3]] for i in range(3)]
+            native_lines.extend(segments)
+            sheet_lines[dimensions[name][1]].extend(segments)
     assert inside_count > 0 and outside_count > 0, 'Both fitting and constrained arrow cases must be covered'
     for row in saved:
         if row[0] != 'LINE':
@@ -120,6 +124,7 @@ def check(directory):
             assert region[0] - 0.0003 <= x <= region[2] + 0.0003, row
             assert region[1] - 0.0003 <= y <= region[3] + 0.0003, row
         native_lines.append(points)
+        sheet_lines[row[1]].append(points)
     for row in saved:
         if row[0] != 'ARC':
             continue
@@ -134,22 +139,34 @@ def check(directory):
         steps = max(1, math.ceil(abs(sweep) / math.radians(1)))
         points = [(cx + radius * math.cos(first + sweep * i / steps),
                    cy + radius * math.sin(first + sweep * i / steps)) for i in range(steps + 1)]
-        native_lines.extend([*a, *b] for a, b in zip(points, points[1:]))
+        segments = [[*a, *b] for a, b in zip(points, points[1:])]
+        native_lines.extend(segments)
+        sheet_lines[row[1]].extend(segments)
     view_notes = [row[2] for row in saved if row[0] == 'VIEWNOTE']
     russian_detail_caption = '\u041c\u0415\u0421\u0422\u041d\u042b\u0419'
     assert view_notes and all(russian_detail_caption not in text.upper() for text in view_notes), 'An automatic detail caption remained in Russian'
+    for row in saved:
+        if row[0] != 'VIEWNOTE' or len(row) < 9:
+            continue
+        extent = list(map(number, row[3:9]))
+        region = regions[row[1]]
+        assert region[0]-.0003 <= extent[0] <= extent[3] <= region[2]+.0003
+        assert region[1]-.0003 <= extent[1] <= extent[4] <= region[3]+.0003
+        assert not (extent[0] < .09 and extent[4] > .277), ('A detail caption overlaps the A4 designation block', row)
     pdfs = list(directory.glob('PDF/*.pdf'))
     assert len(pdfs) == 1
     with pdfplumber.open(pdfs[0]) as pdf:
-        assert len(pdf.pages) == 1
-        page = pdf.pages[0]
-        markers = check_pdf_markers(page, saved)
+        sheets = [row[1] for row in saved if row[0] == 'SHEET']
+        assert len(pdf.pages) == len(sheets)
+        markers = 0
         unit = 25.4 / 72000
-        for char in page.chars:
-            if not char['text'].strip():
-                continue
-            hits = glyph_line_hits(char, native_lines, unit)
-            assert not hits, ('Native line crosses printed text', ascii(char['text']), hits, char.get('matrix'))
+        for sheet, page in zip(sheets, pdf.pages):
+            markers += check_pdf_markers(page, [row for row in saved if len(row) > 1 and row[1] == sheet])
+            for char in page.chars:
+                if not char['text'].strip():
+                    continue
+                hits = glyph_line_hits(char, sheet_lines[sheet], unit)
+                assert not hits, ('Native line crosses printed text', sheet, ascii(char['text']), hits, char.get('matrix'))
     print(f'PASS: {len(dimensions)} saved native dimensions; {len(lengths)} unique physical length groups; '
           f'{len(omitted)} lengths independently reconstructed; {markers} PDF markers matched; '
           f'{inside_count} inside / {outside_count} outside arrow pairs; native lines and heads clear of printed text')

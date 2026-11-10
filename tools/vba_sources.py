@@ -18,6 +18,25 @@ MODULE_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
 PROCEDURE = re.compile(r'^(?:Private |Public )?(?:Sub|Function) (\w+)\(', re.MULTILINE)
 
 
+def validate_variable_names(text):
+    """Keep the reserved Scale identifier out of generator declarations."""
+    for line_number, line in enumerate(text.splitlines(), 1):
+        code = re.sub(r'"(?:[^"]|"")*"', '""', line).split("'", 1)[0]
+        if re.search(r'(?:\b(?:Dim|Static|ByVal|ByRef|Private|Public|Const)|,)\s+Scale\b', code, re.I):
+            raise ValueError(f'Use viewScaleValue instead of the Scale identifier at line {line_number}')
+
+
+def validate_sub_expressions(text):
+    """Reject direct Sub calls used as expression results before native execution."""
+    subs = {name.casefold() for name in re.findall(
+        r'^(?:Private |Public )?Sub (\w+)\(', text, re.MULTILINE)}
+    for line_number, line in enumerate(text.splitlines(), 1):
+        code = re.sub(r'"(?:[^"]|"")*"', '""', line).split("'", 1)[0]
+        for call in re.finditer(r'(?:=|\bIf|\bElseIf)\s*(\w+)\s*\(', code, re.I):
+            if call[1].casefold() in subs:
+                raise ValueError(f'VBA Sub used as a function: {call[1]} at line {line_number}')
+
+
 def validate_loop_controls(text):
     """Catch reused nested For controls before SolidWorks opens a compiler dialog."""
     active = []
@@ -75,7 +94,9 @@ def read_source(source=DEFAULT_SOURCE):
     paths = source_files(source)
     if len(paths) == 1:
         text = paths[0].read_text(SOURCE_ENCODING)
+        validate_variable_names(text)
         validate_loop_controls(text)
+        validate_sub_expressions(text)
         return text
     bodies = []
     procedures = set()
@@ -103,7 +124,9 @@ def read_source(source=DEFAULT_SOURCE):
             r'^Private (?:Const |Type |Declare |\w+ As )',
             text[first_procedure.start():], re.MULTILINE):
         raise ValueError('VBA declarations must precede procedures in the module manifest')
+    validate_variable_names(text)
     validate_loop_controls(text)
+    validate_sub_expressions(text)
     return text
 
 

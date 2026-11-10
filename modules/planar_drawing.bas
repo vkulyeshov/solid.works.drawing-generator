@@ -369,6 +369,8 @@ Private Function MakePlanarFeatureDrawing(ByRef d As SldWorks.ModelDoc2, ByVal d
     Dim index As Long, owner As Long, centerX As Double, directions As Object, key As String, rc As Long, display As SldWorks.DisplayDimension
     Dim request As Object, audit As Object, normal As Variant, box As Variant, thickness As Double, angleReference As Object
     Dim error As Long, warning As Long, nativePath As String
+    Dim ownerViews As Object, endSource As SldWorks.View, referenceView As SldWorks.View
+    Dim firstSheet As String, detailSheet As String, spread As Boolean, localCount As Long, hasFeatures As Boolean
     Set face = PlanarFeatureFace(body)
     If face Is Nothing Then
         Exit Function
@@ -431,6 +433,12 @@ Private Function MakePlanarFeatureDrawing(ByRef d As SldWorks.ModelDoc2, ByVal d
             longest = group("value")
         End If
     Next group
+    For Each group In plan
+        If CBool(group("selected")) And group("value") < longest * PLANAR_LOCAL_EDGE_RATIO Then
+            localCount = localCount + 1
+        End If
+    Next group
+    spread = localCount > PLANAR_PAGE_LOCAL_DIMENSION_LIMIT
     viewScaleValue = FitScale(first, sheetWidth * PLANAR_WIDTH_RATIO, sheetHeight * PLANAR_HEIGHT_RATIO)
     SetPaperScale AsDrawing(d).GetCurrentSheet, viewScaleValue
     first.UseSheetScale = True
@@ -464,16 +472,63 @@ Private Function MakePlanarFeatureDrawing(ByRef d As SldWorks.ModelDoc2, ByVal d
     PrepareDocumentWindow d
     d.ForceRebuild3 False
     Set first = AsDrawing(d).GetFirstView.GetNextView
+    firstSheet = AsDrawing(d).GetCurrentSheet.GetName
+    detailSheet = firstSheet
+    Set ownerViews = CreateObject("Scripting.Dictionary")
+    ownerViews.Add CStr(PLANAR_OVERVIEW_INDEX), first
     views.Add first
+    Set endSource = first
+    If spread Then
+        NewFormattedSheet d, "Місцеві елементи"
+        detailSheet = AsDrawing(d).GetCurrentSheet.GetName
+        Set referenceView = MakeView(d, doc, cfg, body, first.GetOrientationName, sheetWidth * PLANAR_CENTER_X_RATIO, sheetHeight - FAMILY_REFERENCE_CENTER_MARGIN_M)
+        referenceView.Angle = first.Angle
+        referenceView.UseSheetScale = False
+        referenceView.ScaleDecimal = 1
+        d.ForceRebuild3 False
+        referenceView.ScaleDecimal = FitScale(referenceView, sheetWidth - LEADER_WORK_LEFT_M - LEADER_WORK_EDGE_MARGIN_M, FAMILY_REFERENCE_HEIGHT_M)
+        d.ForceRebuild3 False
+        CenterView referenceView, sheetWidth * PLANAR_CENTER_X_RATIO, sheetHeight - FAMILY_REFERENCE_CENTER_MARGIN_M
+        Set endSource = referenceView
+    End If
     For index = 1 To PLANAR_LOCAL_VIEW_COUNT
-        Set view = MakePlanarEndDetail(d, first, plan, centerX, longest, index + 1)
-        views.Add view
+        owner = index + 1
+        hasFeatures = False
+        For Each group In plan
+            If group("value") < longest * PLANAR_LOCAL_EDGE_RATIO Then
+                Set a = group("first")
+                Set b = group("last")
+                If ((a("x") + b("x")) / 2 <= centerX And owner = PLANAR_LEFT_VIEW_INDEX) Or ((a("x") + b("x")) / 2 > centerX And owner = PLANAR_RIGHT_VIEW_INDEX) Then
+                    hasFeatures = True
+                End If
+            End If
+        Next group
+        If hasFeatures Then
+            Set view = MakePlanarEndDetail(d, endSource, plan, centerX, longest, owner)
+            views.Add view
+            ownerViews.Add CStr(owner), view
+        End If
     Next index
     d.ForceRebuild3 False
-    For index = 1 To views.Count
-        CenterView views(index), sheetWidth * PLANAR_CENTER_X_RATIO, sheetHeight * (PLANAR_FIRST_Y_RATIO - (index - 1) * PLANAR_ROW_PITCH_RATIO)
-        Set view = views(index)
+    AsDrawing(d).ActivateSheet firstSheet
+    CenterView first, sheetWidth * PLANAR_CENTER_X_RATIO, sheetHeight * PLANAR_FIRST_Y_RATIO
+    For index = PLANAR_LEFT_VIEW_INDEX To PLANAR_RIGHT_VIEW_INDEX
+        If Not ownerViews.Exists(CStr(index)) Then
+            GoTo NextPlanarFamilyView
+        End If
+        AsDrawing(d).ActivateSheet detailSheet
+        Set view = ownerViews(CStr(index))
+        If spread Then
+            angle = PLANAR_PAGE_UPPER_DETAIL_Y_RATIO
+            If index = PLANAR_RIGHT_VIEW_INDEX Then
+                angle = PLANAR_PAGE_LOWER_DETAIL_Y_RATIO
+            End If
+            CenterView view, sheetWidth * PLANAR_CENTER_X_RATIO, sheetHeight * angle
+        Else
+            CenterView view, sheetWidth * PLANAR_CENTER_X_RATIO, sheetHeight * (PLANAR_FIRST_Y_RATIO - (index - 1) * PLANAR_ROW_PITCH_RATIO)
+        End If
         view.UpdateViewDisplayGeometry
+NextPlanarFamilyView:
     Next index
     Set audit = fs.OpenTextFile(fs.BuildPath(runDir, PLANAR_CONSTRAINTS_FILENAME), FILE_FOR_APPENDING, True, FILE_UNICODE)
     For Each group In plan
@@ -487,7 +542,12 @@ Private Function MakePlanarFeatureDrawing(ByRef d As SldWorks.ModelDoc2, ByVal d
                 owner = PLANAR_RIGHT_VIEW_INDEX
             End If
         End If
-        Set view = views(owner)
+        Set view = ownerViews(CStr(owner))
+        If owner = PLANAR_OVERVIEW_INDEX Then
+            AsDrawing(d).ActivateSheet firstSheet
+        Else
+            AsDrawing(d).ActivateSheet detailSheet
+        End If
         If CBool(group("selected")) And owner <> PLANAR_OVERVIEW_INDEX Then
             AddPlanarEdgeDimension d, view, group, area
         End If
@@ -505,6 +565,7 @@ Private Function MakePlanarFeatureDrawing(ByRef d As SldWorks.ModelDoc2, ByVal d
         End If
     Next group
     audit.Close
+    AsDrawing(d).ActivateSheet firstSheet
     profileRoleDrawing = True
     normal = face.Normal
     box = body.GetBodyBox
@@ -512,6 +573,6 @@ Private Function MakePlanarFeatureDrawing(ByRef d As SldWorks.ModelDoc2, ByVal d
         thickness = thickness + Abs(normal(index)) * (box(index + BBOX_MAX_OFFSET) - box(index))
     Next index
     AddText d, "Товщина " & CStr(Round(thickness * MILLIMETRES_PER_METRE, LINEAR_DECIMAL_PLACES)) & " мм", CONTENT_LEFT_M, PROFILE_THICKNESS_NOTE_Y_M, TEXT_HEIGHT_STANDARD_M, 0
-    Log "PLANAR FEATURE DRAWING views=" & views.Count & "; native planned dimensions=" & planarDimensionRequests.Count & "; grouped hole diameters=" & rc & "; viewScaleValue=" & viewScaleValue
+    Log "PLANAR FEATURE DRAWING views=" & views.Count & "; sheets=" & AsDrawing(d).GetSheetCount & "; native planned dimensions=" & planarDimensionRequests.Count & "; grouped hole diameters=" & rc & "; viewScaleValue=" & viewScaleValue
     MakePlanarFeatureDrawing = True
 End Function

@@ -88,6 +88,7 @@ def check(directory):
             assert len(calls) == 1, calls
             assert re.search(r'\b8\s*[xX]', calls[0][8]), calls[0]
             assert 'M12x1.5' in calls[0][8] and '6H' in calls[0][8], calls[0]
+            assert '\u041d\u0410\u0421\u041a\u0412\u041e\u0417\u042c' not in calls[0][8], calls[0]
             assert math.isclose(number(calls[0][5]), 0.0105, abs_tol=1e-9)
             values = lambda prefix: [number(row[5]) for key, row in owners.items() if key.startswith(prefix)]
             pitch_values = values('pattern-circle|')

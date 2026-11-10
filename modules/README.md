@@ -29,7 +29,13 @@ Every BAS file must be listed exactly once, with a matching `VB_Name` header and
 | `manufacturing_references.bas` | Model-topology circle classification, direct diameter references, profile view preference, and covered construction constraints |
 | `manufacturing_callouts.bas` | Combined distance-angle chamfer labels and profile dimension placement beside hole-pattern datums |
 | `profile_planner.bas` | Topological outline/slot classification and independent coordinate-constraint planning |
+| `panel_planner.bas` | Clipped-panel frame recognition, local notch sizes, shared depths, and native location references |
+| `panel_routing.bas` | Panel text/material clearance and external aligned dimension bases |
 | `profile_drawing.bas` | Geometry-based view roles, native references, dimension lanes, and space allocation |
+| `profile_pages.bas` | Complete overviews, native cropped feature views, page packing, and bounded overflow splitting |
+| `compact_profiles.bas` | Two-sheet semantic panel layout, complete recesses, rotated side edges, separate size/gap rows, and bounded native text placement |
+| `family_profiles.bas` | Support-line families for rectangular and stepped panels, internal openings, rotated details and whole-family page packing |
+| `layout_labels.bas` | Shared bounded label routing, printed-text clearance, view obstacles and inside-arrow fitting across native part planners |
 | `profile_routing.bas` | Filled-silhouette tests, material-free dimension bases, and leaders through open cuts |
 | `planar_constraints.bas` | Whole-profile and local feature symmetries; independent contour length variables and checked vector closure |
 | `planar_features.bas` | Constant-thickness prismatic recognition, circle loops and visible geometric references |

@@ -21,6 +21,25 @@ Private featureCircleClassifications As Object
 Private featureDimensionPlacement As Object
 Private featureDimensionLanes As Object
 Private profileRoleDrawing As Boolean
+Private profilePagedMode As Boolean
+Private profilePageRegions As Object, profilePageCrops As Object
+Private profilePageViews As Collection, profilePageSheets As Collection
+Private profilePagePlan As Collection, profilePageGroups As Collection
+Private profilePageFirstSheet As String, profilePageModel As String, profilePageConfiguration As String
+Private profilePageBody As String, profilePageOrientation As String
+Private profilePageAngle As Double, profilePageMatrix As Variant, profilePageLimit As Long
+Private profilePageInitialView As SldWorks.View
+Private profilePageFailureView As String
+Private profilePageThickness As Double
+Private profilePageSplitSerial As Long
+Private profilePanelFrame As Collection, profilePanelFeatures As Collection
+Private profileCompactMode As Boolean
+Private profileCompactEdgeCount As Long
+Private profileFamilyMode As Boolean
+Private profilePanelOpenings As Collection
+Private semanticLayoutObstacles As Collection
+Private semanticLayoutGeometry As Object
+Private planarCandidateBudget As Long
 Private planarDimensionRequests As Object
 Private planarContourPoints As Collection
 Private profileRawLoops As Collection

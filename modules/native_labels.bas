@@ -1,11 +1,22 @@
 Attribute VB_Name = "native_labels"
 Option Explicit
-Private Function NativeTextBounds(ByVal data As SldWorks.DisplayData) As Variant
+Private Function NativeTextBounds(ByVal data As SldWorks.DisplayData, Optional ByVal owner As Object = Nothing) As Variant
     Dim result As Variant, p As Variant, i As Long, j As Long
     Dim w As Double, h As Double, a As Double, x As Double, y As Double, dx As Double, dy As Double
-    Dim text As String, line As Variant, lineIndex As Long, firstAlong As Double, lastAlong As Double
+    Dim text As String, line As Variant, lineIndex As Long, firstAlong As Double, lastAlong As Double, polygon As Variant, point As Variant
     Dim firstNormal As Double, lastNormal As Double, tail As Double, measured As Double
     result = Array(SEARCH_INITIAL_LIMIT, SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT)
+    ' Native labels use measured font metrics. A collinear dimension baseline
+    ' must not inflate their text width to the measured geometry interval.
+    If Not owner Is Nothing Then
+        For Each polygon In PlanarTextPolygons(owner, data, 0)
+            For Each point In polygon
+                NativeExpandBounds result, point(0), point(1)
+            Next point
+        Next polygon
+        NativeTextBounds = result
+        Exit Function
+    End If
     For i = 0 To data.GetTextCount - 1
         p = data.GetTextPositionAtIndex(i)
         h = data.GetTextHeightAtIndex(i)
@@ -13,6 +24,11 @@ Private Function NativeTextBounds(ByVal data As SldWorks.DisplayData) As Variant
         text = Replace(text, SW_DIMENSION_TOKEN_DEGREE, "d")
         text = Replace(text, SW_DIMENSION_TOKEN_PLUS_MINUS, "+")
         w = Len(text) * h * LEADER_GLYPH_WIDTH_RATIO
+        If Not owner Is Nothing Then
+            If PanelOwnsDimension(owner) Then
+                w = PlanarMeasureTextWidth(owner, text, h)
+            End If
+        End If
         a = data.GetTextAngleAtIndex(i)
         measured = SEARCH_INITIAL_LIMIT
         For lineIndex = 0 To data.GetLineCount - 1
@@ -65,7 +81,7 @@ Private Function NativeDimensionBounds(ByVal display As SldWorks.DisplayDimensio
     Dim data As SldWorks.DisplayData, bounds As Variant, line As Variant, arrow As Variant, i As Long
     Dim dx As Double, dy As Double, length As Double, width As Double
     Set data = display.GetDisplayData
-    bounds = NativeTextBounds(data)
+    bounds = NativeTextBounds(data, display)
     For i = 0 To data.GetLineCount - 1
         line = data.GetLineAtIndex2(i)
         NativeExpandBounds bounds, line(DISPLAY_LINE_START_X), line(DISPLAY_LINE_START_Y)
@@ -204,7 +220,7 @@ Private Sub PlaceCenteredBelowDimension(ByVal d As SldWorks.ModelDoc2, ByVal dis
     display.OffsetText = False
     display.CenterText = True
     Set textFormat = ann.GetTextFormat(SW_ANNOTATION_TEXT_FORMAT_FIRST)
-    textBounds = NativeTextBounds(display.GetDisplayData)
+    textBounds = NativeTextBounds(display.GetDisplayData, display)
     If textBounds(OUTLINE_RIGHT_INDEX) - textBounds(OUTLINE_LEFT_INDEX) + 2 * LEADER_LABEL_CLEARANCE_M > display.GetDimension2(SW_DIMENSION_INDEX_FIRST).SystemValue * view.ScaleDecimal Then
         textFormat.CharHeight = TEXT_HEIGHT_SMALL_M
         ann.SetTextFormat SW_ANNOTATION_TEXT_FORMAT_FIRST, False, textFormat
@@ -234,7 +250,7 @@ Private Sub PlaceCenteredBelowDimension(ByVal d As SldWorks.ModelDoc2, ByVal dis
         ann.SetPosition2 position(SCREEN_X_AXIS_INDEX), position(SCREEN_Y_AXIS_INDEX) + targetY - first(SCREEN_Y_AXIS_INDEX), position(SPACE_LAST_AXIS_INDEX)
     Next attempt
     d.GraphicsRedraw2
-    textBounds = NativeTextBounds(display.GetDisplayData)
+    textBounds = NativeTextBounds(display.GetDisplayData, display)
     If textBounds(OUTLINE_RIGHT_INDEX) - textBounds(OUTLINE_LEFT_INDEX) + 2 * DIMENSION_GEOMETRY_GAP_M > display.GetDimension2(SW_DIMENSION_INDEX_FIRST).SystemValue * view.ScaleDecimal Then
         display.CenterText = False
         display.OffsetText = True
@@ -335,18 +351,32 @@ End Function
 
 Private Sub NativeCollectLines(ByVal display As SldWorks.DisplayDimension, ByVal lines As Collection, Optional ByVal fixedOnly As Boolean = False)
     Dim data As SldWorks.DisplayData, i As Long, line As Variant, first As Variant, last As Variant, count As Long
+    Dim filterPanel As Boolean, segment As Variant
     Set data = display.GetDisplayData
     count = data.GetLineCount
     If fixedOnly Then
         If display.Type2 = SW_DIMENSION_LINEAR And display.OffsetText Then
-            count = count - NATIVE_OFFSET_LEADER_SEGMENTS
+            If PanelOwnsDimension(display) And data.GetArrowHeadCount = 2 Then
+                first = data.GetArrowHeadAtIndex2(0)
+                last = data.GetArrowHeadAtIndex2(1)
+                filterPanel = True
+            Else
+                count = count - NATIVE_OFFSET_LEADER_SEGMENTS
+            End If
         ElseIf display.Type2 = SW_DIMENSION_RADIAL Or display.Type2 = SW_DIMENSION_DIAMETER Then
             count = 0
         End If
     End If
     For i = 0 To count - 1
         line = data.GetLineAtIndex2(i)
-        lines.Add Array(line(DISPLAY_LINE_START_X), line(DISPLAY_LINE_START_Y), line(DISPLAY_LINE_END_X), line(DISPLAY_LINE_END_Y))
+        segment = Array(line(DISPLAY_LINE_START_X), line(DISPLAY_LINE_START_Y), line(DISPLAY_LINE_END_X), line(DISPLAY_LINE_END_Y))
+        If filterPanel Then
+            If NativeFixedLinearSegment(segment, first, last) Then
+                lines.Add segment
+            End If
+        Else
+            lines.Add segment
+        End If
     Next i
     If display.Type2 = SW_DIMENSION_LINEAR And data.GetArrowHeadCount = 2 Then
         first = data.GetArrowHeadAtIndex2(0)
@@ -389,6 +419,48 @@ Private Function NativeGraphicsHitObstacles(ByVal display As SldWorks.DisplayDim
     Next item
 End Function
 
+' Visit a finite grid from the preferred position outwards without duplicates.
+Private Function NativeGridIndex(ByVal order As Long, ByVal count As Long, ByVal preferred As Long) As Long
+    Dim paired As Long, distance As Long
+    preferred = CLng(-MinD(-MinD(preferred, count - 1), 0))
+    paired = CLng(MinD(preferred, count - 1 - preferred))
+    If order <= 2 * paired Then
+        distance = (order + 1) \ 2
+        If order Mod 2 = 0 Then
+            distance = -distance
+        End If
+        NativeGridIndex = preferred + distance
+    ElseIf preferred <= count - 1 - preferred Then
+        NativeGridIndex = preferred + order - paired
+    Else
+        NativeGridIndex = preferred - order + paired
+    End If
+End Function
+
+Private Function NativeLabelRowCost(ByVal y As Double, ByVal height As Double, ByVal anchor As Double) As Double
+    Dim distance As Double
+    ' A center or either label edge cannot be closer than this row interval.
+    distance = Abs(y + height / 2 - anchor) - height / 2
+    If distance > 0 Then
+        NativeLabelRowCost = distance * distance
+    End If
+End Function
+
+Private Function NativeCandidateLeaderHitsBox(ByVal anchorX As Double, ByVal anchorY As Double, ByVal box As Variant, ByVal obstacle As Variant, ByVal useNearestEnd As Boolean) As Boolean
+    Dim x As Double
+    If useNearestEnd Then
+        x = box(0)
+        If (box(0) + box(2)) / 2 < anchorX Then
+            x = box(2)
+        End If
+        ' Validate the actual native leader after moving. The unused alternate
+        ' attachment must not reject an otherwise available text position.
+        NativeCandidateLeaderHitsBox = NativeLeaderCrossesBox(anchorX, anchorY, x, box(1), obstacle)
+    Else
+        NativeCandidateLeaderHitsBox = NativeLeaderCrossesBox(anchorX, anchorY, box(0), box(1), obstacle) Or NativeLeaderCrossesBox(anchorX, anchorY, box(2), box(1), obstacle)
+    End If
+End Function
+
 Private Sub PlaceNativeDimensionLabel(ByVal d As SldWorks.ModelDoc2, ByVal display As SldWorks.DisplayDimension, ByVal region As Variant, ByVal obstacles As Collection, ByVal labels As Collection, ByVal lines As Collection, ByVal ownOutline As Variant)
     Dim data As SldWorks.DisplayData, ann As SldWorks.Annotation, bounds As Variant, p As Variant, box As Variant, item As Variant
     Dim x As Double, y As Double, w As Double, h As Double, cx As Double, cy As Double, bestX As Double, bestY As Double
@@ -397,9 +469,30 @@ Private Sub PlaceNativeDimensionLabel(ByVal d As SldWorks.ModelDoc2, ByVal displ
     Dim rejected As New Collection, oldPosition As Variant, retries As Long, textFormat As SldWorks.TextFormat
     Dim requiredWidth As Double, requiredHeight As Double, actual As Variant, resizeAttempts As Long
     Dim protectedLabels As Collection, connection As Variant
+    Dim panel As Boolean, profileLocal As Boolean, dimensionType As Long, profileRequest As Object
+    Dim materialLoops As Variant, materialBounds As Variant
+    Dim firstPass As Long
+    Dim xOrder As Long, yOrder As Long, xCount As Long, yCount As Long, xPreferred As Long, yPreferred As Long
+    Dim searchPitch As Double
+    panel = PanelOwnsDimension(display)
+    profileLocal = ProfileLocalBase(display)
+    dimensionType = display.Type2
+    If panel Or profileLocal Then
+        Set profileRequest = profileDimensionRequests(display.GetNameForSelection)
+        materialLoops = profileSheetContours(profileRequest("view"))
+        materialBounds = PanelMaterialBounds(materialLoops(0))
+    End If
     Set ann = display.GetAnnotation
-    display.SetBrokenLeader2 False, SW_BROKEN_LEADER_HORIZONTAL_TEXT
-    If display.Type2 = SW_DIMENSION_RADIAL Or display.Type2 = SW_DIMENSION_DIAMETER Then
+    If panel Then
+        If CLng(profileRequest("axis")) = SCREEN_Y_AXIS_INDEX Then
+            display.SetBrokenLeader2 False, SW_SOLID_LEADER_ALIGNED_TEXT
+        Else
+            display.SetBrokenLeader2 False, SW_BROKEN_LEADER_HORIZONTAL_TEXT
+        End If
+    Else
+        display.SetBrokenLeader2 False, SW_BROKEN_LEADER_HORIZONTAL_TEXT
+    End If
+    If dimensionType = SW_DIMENSION_RADIAL Or dimensionType = SW_DIMENSION_DIAMETER Then
         display.SolidLeader = False
         display.SetBentLeaderLength False, LEADER_SHOULDER_LENGTH_M
     Else
@@ -407,10 +500,14 @@ Private Sub PlaceNativeDimensionLabel(ByVal d As SldWorks.ModelDoc2, ByVal displ
         display.OffsetText = True
     End If
     oldPosition = ann.GetPosition
+    searchPitch = LEADER_GRID_PITCH_M
+    If panel Then
+        searchPitch = PANEL_LABEL_GRID_PITCH_M
+    End If
 SearchNativeLabel:
     found = False
     Set data = display.GetDisplayData
-    bounds = NativeTextBounds(data)
+    bounds = NativeTextBounds(data, display)
     w = bounds(2) - bounds(0)
     h = bounds(3) - bounds(1)
     w = -MinD(-w, -requiredWidth)
@@ -421,7 +518,7 @@ SearchNativeLabel:
         arrow = data.GetArrowHeadAtIndex2(0)
         anchorX = arrow(0)
         anchorY = arrow(1)
-        If display.Type2 = SW_DIMENSION_LINEAR And data.GetArrowHeadCount = 2 Then
+        If dimensionType = SW_DIMENSION_LINEAR And data.GetArrowHeadCount = 2 Then
             arrow2 = data.GetArrowHeadAtIndex2(1)
             anchorX = (arrow(0) + arrow2(0)) / 2
             anchorY = (arrow(1) + arrow2(1)) / 2
@@ -444,25 +541,49 @@ SearchNativeLabel:
         labelSide = NativePlacementSide(display)
     End If
     best = SEARCH_INITIAL_LIMIT
-    For pass = 1 To LEADER_LABEL_SEARCH_PASSES
-        For y = region(1) + LEADER_LABEL_CLEARANCE_M To region(3) - h - LEADER_LABEL_CLEARANCE_M Step LEADER_GRID_PITCH_M
-            For x = region(0) + LEADER_LABEL_CLEARANCE_M To region(2) - w - LEADER_LABEL_CLEARANCE_M Step LEADER_GRID_PITCH_M
+    firstPass = 1
+    If panel And profileLocal Then
+        ' Local leaders use the actual open cutout, not a forced side of the
+        ' rectangular view outline that would route through the surrounding land.
+        firstPass = LEADER_LABEL_SEARCH_PASSES
+    End If
+    xCount = Int((region(2) - region(0) - w - 2 * LEADER_LABEL_CLEARANCE_M) / searchPitch) + 1
+    yCount = Int((region(3) - region(1) - h - 2 * LEADER_LABEL_CLEARANCE_M) / searchPitch) + 1
+    If panel Then
+        xPreferred = CLng((anchorX - w / 2 - region(0) - LEADER_LABEL_CLEARANCE_M) / searchPitch)
+        yPreferred = CLng((anchorY - h / 2 - region(1) - LEADER_LABEL_CLEARANCE_M) / searchPitch)
+    End If
+    For pass = firstPass To LEADER_LABEL_SEARCH_PASSES
+        For yOrder = 0 To yCount - 1
+            y = region(1) + LEADER_LABEL_CLEARANCE_M + NativeGridIndex(yOrder, yCount, yPreferred) * searchPitch
+            If panel And NativeLabelRowCost(y, h, anchorY) > best + DIRECTION_ZERO_TOLERANCE ^ 2 Then
+                GoTo NextLabelRow
+            End If
+            For xOrder = 0 To xCount - 1
+                x = region(0) + LEADER_LABEL_CLEARANCE_M + NativeGridIndex(xOrder, xCount, xPreferred) * searchPitch
                 cx = x + w / 2
                 cy = y + h / 2
-                If ProfileLocalBase(display) Or (Abs(cx - anchorX) >= LEADER_MIN_DIAGONAL_M And Abs(cy - anchorY) >= LEADER_MIN_DIAGONAL_M) Then
+                If profileLocal Or (Abs(cx - anchorX) >= LEADER_MIN_DIAGONAL_M And Abs(cy - anchorY) >= LEADER_MIN_DIAGONAL_M) Then
                     box = Array(x, y, x + w, y + h)
                     cost = (cx - anchorX) ^ 2 + (cy - anchorY) ^ 2
-                    If ProfileLocalBase(display) Then
-                        connection = ProfileLabelConnection(display, box)
+                    If profileLocal Or panel Then
+                        connection = Array(box(0), box(1))
+                        If cx < anchorX Then
+                            connection = Array(box(2), box(1))
+                        End If
+                    End If
+                    If profileLocal Then
                         cost = (connection(0) - anchorX) ^ 2 + (connection(1) - anchorY) ^ 2
                     End If
                     valid = cost < best
                     ' A descending leader must not enter the label through its own text.
-                    If Not ProfileLocalBase(display) And box(0) < anchorX And box(2) > anchorX And box(1) < anchorY Then
+                    If (Not panel Or pass = 1) And Not profileLocal And box(0) < anchorX And box(2) > anchorX And box(1) < anchorY Then
                         valid = False
                     End If
-                    If valid Then
-                        valid = ProfileCandidateLeaderClear(display, anchorX, anchorY, box)
+                    If valid And (profileLocal Or panel) Then
+                        If NativeLeaderCrossesBox(anchorX, anchorY, connection(0), connection(1), materialBounds) Then
+                            valid = Not ProfileLineCutsMaterial(Array(anchorX, anchorY), connection, materialLoops)
+                        End If
                     End If
                     If pass = 1 Then
                         If labelSide = NATIVE_LABEL_SIDE_ABOVE And box(1) < ownOutline(3) + LEADER_GEOMETRY_CLEARANCE_M Then
@@ -475,7 +596,7 @@ SearchNativeLabel:
                             valid = False
                         End If
                     End If
-                    If display.Type2 = SW_DIMENSION_LINEAR Then
+                    If dimensionType = SW_DIMENSION_LINEAR And Not panel Then
                         If anchorX < ownOutline(0) Or anchorX > ownOutline(2) Or anchorY < ownOutline(1) Or anchorY > ownOutline(3) Then
                             If NativeLeaderCrossesBox(anchorX, anchorY, cx, cy, ownOutline) Then
                                 valid = False
@@ -486,21 +607,40 @@ SearchNativeLabel:
                         GoTo NextLabelCandidate
                     End If
                     For Each item In rejected
-                        If Abs(x - item(0)) < DIRECTION_ZERO_TOLERANCE And Abs(y - item(1)) < DIRECTION_ZERO_TOLERANCE Then
-                            valid = False
-                            Exit For
+                        If panel Then
+                            ' Spread native trials over distinct label pockets instead
+                            ' of spending every attempt beside the same failed leader.
+                            If Abs(x - item(0)) < w + LEADER_LABEL_CLEARANCE_M And Abs(y - item(1)) < h + LEADER_LABEL_CLEARANCE_M Then
+                                valid = False
+                                Exit For
+                            End If
+                        Else
+                            If Abs(x - item(0)) < DIRECTION_ZERO_TOLERANCE And Abs(y - item(1)) < DIRECTION_ZERO_TOLERANCE Then
+                                valid = False
+                                Exit For
+                            End If
                         End If
                     Next item
                     If Not valid Then
                         GoTo NextLabelCandidate
                     End If
                     For Each item In obstacles
-                        If NativeBoxesOverlap(box, item, LEADER_GEOMETRY_CLEARANCE_M) Then
-                            valid = False
-                            Exit For
+                        If panel And NativeSameBox(item, ownOutline) Then
+                            actual = Array(box(0) - LEADER_GEOMETRY_CLEARANCE_M, box(1) - LEADER_GEOMETRY_CLEARANCE_M, box(2) + LEADER_GEOMETRY_CLEARANCE_M, box(3) + LEADER_GEOMETRY_CLEARANCE_M)
+                            If NativeBoxesOverlap(actual, materialBounds, 0) Then
+                                If PanelBoxTouchesMaterial(actual, materialLoops) Then
+                                    valid = False
+                                    Exit For
+                                End If
+                            End If
+                        Else
+                            If NativeBoxesOverlap(box, item, LEADER_GEOMETRY_CLEARANCE_M) Then
+                                valid = False
+                                Exit For
+                            End If
                         End If
                         If Not NativeSameBox(item, ownOutline) Then
-                            If NativeLeaderCrossesBox(anchorX, anchorY, box(0), box(1), item) Or NativeLeaderCrossesBox(anchorX, anchorY, box(2), box(1), item) Then
+                            If NativeCandidateLeaderHitsBox(anchorX, anchorY, box, item, panel) Then
                                 valid = False
                                 Exit For
                             End If
@@ -516,7 +656,7 @@ SearchNativeLabel:
                     End If
                     If valid Then
                         For Each item In labels
-                            If NativeLeaderCrossesBox(anchorX, anchorY, box(0), box(1), item) Or NativeLeaderCrossesBox(anchorX, anchorY, box(2), box(1), item) Then
+                            If NativeCandidateLeaderHitsBox(anchorX, anchorY, box, item, panel) Then
                                 valid = False
                                 Exit For
                             End If
@@ -540,13 +680,20 @@ SearchNativeLabel:
                     End If
                 End If
     NextLabelCandidate:
-            Next x
-        Next y
+            Next xOrder
+NextLabelRow:
+        Next yOrder
         If found Then
             Exit For
         End If
     Next pass
     If Not found Then
+        If searchPitch > LEADER_GRID_PITCH_M Then
+            searchPitch = LEADER_GRID_PITCH_M
+            Set rejected = New Collection
+            retries = 0
+            GoTo SearchNativeLabel
+        End If
         Set textFormat = ann.GetTextFormat(SW_ANNOTATION_TEXT_FORMAT_FIRST)
         If textFormat.CharHeight > TEXT_HEIGHT_SMALL_M + DIMENSION_GEOMETRY_GAP_M Then
             textFormat.CharHeight = TEXT_HEIGHT_SMALL_M
@@ -564,7 +711,7 @@ SearchNativeLabel:
     ann.SetPosition2 p(0) + bestX - bounds(0), p(1) + bestY - bounds(1), p(2)
     d.GraphicsRedraw2
     Set data = display.GetDisplayData
-    actual = NativeTextBounds(data)
+    actual = NativeTextBounds(data, display)
     If actual(2) - actual(0) > w + DIMENSION_GEOMETRY_GAP_M Or actual(3) - actual(1) > h + DIMENSION_GEOMETRY_GAP_M Then
         ' Native text may rotate or acquire a longer shoulder on its first move.
         resizeAttempts = resizeAttempts + 1
@@ -584,15 +731,28 @@ SearchNativeLabel:
     For Each item In labels
         protectedLabels.Add item
     Next item
-    protectedLabels.Add NativeTextBounds(display.GetDisplayData)
-    If NativeLinesHitLabels(display, protectedLabels) Or NativeGraphicsHitObstacles(display, obstacles, ownOutline) Or ProfileDimensionCutsMaterial(display) Or Not NativeBoundsInside(NativeDimensionBounds(display), region) Then
+    protectedLabels.Add NativeTextBounds(display.GetDisplayData, display)
+    valid = True
+    If panel Then
+        valid = Not PanelLabelTouchesMaterial(display, NativeTextBounds(display.GetDisplayData, display))
+    End If
+    If Not valid Or NativeLinesHitLabels(display, protectedLabels) Or NativeGraphicsHitObstacles(display, obstacles, ownOutline) Or ProfileDimensionCutsMaterial(display) Or Not NativeBoundsInside(NativeDimensionBounds(display), region) Then
         If retries = 0 Then
             Call NativeLinesHitLabels(display, protectedLabels, True)
+            If Setting("DimensionLayoutAudit", "0") = "1" Then
+                Log "NATIVE REJECTION " & display.GetNameForSelection & "; material=" & ProfileDimensionCutsMaterial(display, True) & "; obstacles=" & NativeGraphicsHitObstacles(display, obstacles, ownOutline) & "; bounds=" & Join(NativeDimensionBounds(display), ",") & "; region=" & Join(region, ",")
+            End If
         End If
         rejected.Add Array(bestX, bestY)
         retries = retries + 1
         ann.SetPosition2 oldPosition(0), oldPosition(1), oldPosition(2)
         If retries < NATIVE_LABEL_RETRY_LIMIT Then
+            GoTo SearchNativeLabel
+        End If
+        If searchPitch > LEADER_GRID_PITCH_M Then
+            searchPitch = LEADER_GRID_PITCH_M
+            Set rejected = New Collection
+            retries = 0
             GoTo SearchNativeLabel
         End If
         Set textFormat = ann.GetTextFormat(SW_ANNOTATION_TEXT_FORMAT_FIRST)
@@ -609,19 +769,31 @@ SearchNativeLabel:
         Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Native leader cannot avoid the existing labels: " & display.GetNameForSelection
     End If
     Set data = display.GetDisplayData
-    labels.Add NativeTextBounds(data)
+    labels.Add NativeTextBounds(data, display)
     NativeCollectLines display, lines
 End Sub
 
 Private Function NativeLabelsByWidth(ByVal records As Collection) As Collection
     Dim result As New Collection, widths As Object, item As Variant, display As SldWorks.DisplayDimension
     Dim bounds As Variant, data As SldWorks.DisplayData, width As Double, index As Long, inserted As Boolean
+    Dim first As Variant, last As Variant, span As Double
     Set widths = CreateObject("Scripting.Dictionary")
     For Each item In records
         Set display = item
         Set data = display.GetDisplayData
-        bounds = NativeTextBounds(data)
+        bounds = NativeTextBounds(data, display)
         width = bounds(2) - bounds(0)
+        If PanelOwnsDimension(display) Then
+            span = SEARCH_INITIAL_LIMIT
+            If data.GetArrowHeadCount = 2 Then
+                first = data.GetArrowHeadAtIndex2(0)
+                last = data.GetArrowHeadAtIndex2(1)
+                span = Sqr((last(0) - first(0)) ^ 2 + (last(1) - first(1)) ^ 2)
+            End If
+            ' Reserve the narrowest measurement corridors before flexible labels
+            ' can surround their anchors and make a later greedy placement fail.
+            width = width + PanelLabelPriority(span, CLng(profileDimensionRequests(display.GetNameForSelection)("axis")) = PANEL_ALIGNED_AXIS, ProfileLocalBase(display))
+        End If
         widths.Add display.GetNameForSelection, width
         inserted = False
         For index = 1 To result.Count
@@ -641,7 +813,7 @@ End Function
 Private Function KeepReadableNativeText(ByVal display As SldWorks.DisplayDimension, ByVal region As Variant, ByVal obstacles As Collection, ByVal labels As Collection, ByVal lines As Collection, ByVal ownOutline As Variant) As Boolean
     Dim data As SldWorks.DisplayData, bounds As Variant, interior As Variant, item As Variant
     Set data = display.GetDisplayData
-    bounds = NativeTextBounds(data)
+    bounds = NativeTextBounds(data, display)
     If Not NativeBoundsInside(NativeDimensionBounds(display), region) Or NativeGraphicsHitObstacles(display, obstacles, ownOutline) Or ProfileDimensionCutsMaterial(display) Then
         Exit Function
     End If

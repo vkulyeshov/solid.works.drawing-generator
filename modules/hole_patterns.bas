@@ -142,7 +142,7 @@ End Function
 Private Sub AddSharedHoleSizes(ByVal d As SldWorks.ModelDoc2, ByVal evidence As Object)
     Dim groups As Object, item As Variant, pattern As Object, group As Object, key As Variant
     Dim sheetName As Variant, view As SldWorks.View, edge As SldWorks.Edge, display As SldWorks.DisplayDimension
-    Dim outline As Variant, finished As Boolean, definition As String
+    Dim outline As Variant, finished As Boolean, definition As String, localized As String, fields As Variant, field As Variant
     Set groups = CreateObject("Scripting.Dictionary")
     For Each item In evidence("patterns")
         Set pattern = item
@@ -175,7 +175,19 @@ Private Sub AddSharedHoleSizes(ByVal d As SldWorks.ModelDoc2, ByVal evidence As 
                         If Not display Is Nothing Then
                             definition = display.GetText(SW_DIMENSION_TEXT_CALLOUT_ABOVE_DEFINITION)
                             definition = Replace(definition, SW_HOLE_INSTANCE_TOKEN, CStr(group("count")))
+                            definition = Replace(definition, SW_HOLE_THROUGH_TOKEN, "НАСКРІЗЬ")
                             display.SetText SW_DIMENSION_TEXT_CALLOUT_ABOVE, definition
+                            fields = Array(Array(SW_DIMENSION_TEXT_PREFIX_DEFINITION, SW_DIMENSION_TEXT_PREFIX), Array(SW_DIMENSION_TEXT_SUFFIX_DEFINITION, SW_DIMENSION_TEXT_SUFFIX))
+                            For Each field In fields
+                                definition = display.GetText(CLng(field(0)))
+                                localized = Replace(definition, SW_HOLE_THROUGH_TOKEN, "НАСКРІЗЬ")
+                                localized = Replace(localized, "НАСКВОЗЬ", "НАСКРІЗЬ")
+                                If localized <> definition Then
+                                    ' Definition fields are read-only. Write the
+                                    ' corresponding text field, retaining tokens.
+                                    display.SetText CLng(field(1)), localized
+                                End If
+                            Next field
                             featureDimensionOwners.Add display.GetNameForSelection, "hole-profile|" & CStr(key)
                             Log "HOLE SHARED SIZE count=" & group("count") & "; view=" & view.Name
                             finished = True

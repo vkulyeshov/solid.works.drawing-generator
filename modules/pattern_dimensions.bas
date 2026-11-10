@@ -93,6 +93,7 @@ Private Sub AddPatternSpan(ByVal d As SldWorks.ModelDoc2, ByVal view As SldWorks
     Dim a As Variant, b As Variant, outline As Variant, display As SldWorks.DisplayDimension, dimension As SldWorks.Dimension, expected As Double
     Dim key As String, parameters As Variant, shape As Variant, center As Variant, angle As Double, increment As Double, dx As Double, dy As Double
     Dim sketch As SldWorks.Sketch, sketchTransform As Variant, pitchCenter As Variant, pitchCircle As SldWorks.SketchSegment
+    Dim manager As SldWorks.SketchManager, oldAddToDB As Boolean, oldFocus As Boolean
     a = PatternSheetPoint(view, first.GetCurve.CircleParams)
     b = PatternSheetPoint(view, last.GetCurve.CircleParams)
     expected = Sqr((a(0) - b(0)) ^ 2 + (a(1) - b(1)) ^ 2) / view.ScaleDecimal
@@ -110,8 +111,14 @@ Private Sub AddPatternSpan(ByVal d As SldWorks.ModelDoc2, ByVal view As SldWorks
         sketchTransform = sketch.ModelToSketchTransform.ArrayData
         pitchCenter = SourcePointInSketch(center, sketchTransform)
         AsDrawing(d).ActivateView CStr(view.Name)
+        oldFocus = view.FocusLocked
+        view.FocusLocked = True
         d.ClearSelection2 True
-        Set pitchCircle = d.SketchManager.CreateCircleByRadius(pitchCenter(0), pitchCenter(1), 0, shape(PATTERN_RADIUS_INDEX) * view.ScaleDecimal * Abs(sketchTransform(MATRIX_SCALE_INDEX)))
+        Set manager = d.SketchManager
+        oldAddToDB = manager.AddToDB
+        manager.AddToDB = True
+        Set pitchCircle = manager.CreateCircleByRadius(pitchCenter(0), pitchCenter(1), 0, shape(PATTERN_RADIUS_INDEX) * view.ScaleDecimal * Abs(sketchTransform(MATRIX_SCALE_INDEX)))
+        manager.AddToDB = oldAddToDB
         If pitchCircle Is Nothing Then
             Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Cannot create the associated pitch circle."
         End If
@@ -140,6 +147,10 @@ Private Sub AddPatternSpan(ByVal d As SldWorks.ModelDoc2, ByVal view As SldWorks
         Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Cannot create a pattern location dimension."
     End If
     Set dimension = display.GetDimension2(SW_DIMENSION_INDEX_FIRST)
+    If regular Then
+        view.FocusLocked = oldFocus
+        Log "PATTERN CIRCLE model diameter=" & expected & "; native diameter=" & dimension.SystemValue
+    End If
     If Not regular Then
         dimension.SetArcEndCondition DIMENSION_REFERENCE_FIRST, SW_ARC_CENTER
         dimension.SetArcEndCondition DIMENSION_REFERENCE_SECOND, SW_ARC_CENTER
@@ -381,6 +392,7 @@ End Sub
 Private Sub RenderHolePatternCircles(ByVal d As SldWorks.ModelDoc2)
     Dim item As Variant, graphic As Object, view As SldWorks.View, shape As Variant, point As Variant, segment As SldWorks.SketchSegment
     Dim sheet As SldWorks.Sheet, properties As Variant, sheetScale As Double, radius As Double
+    Dim manager As SldWorks.SketchManager, oldAddToDB As Boolean, oldFocus As Boolean
     If featurePatternGraphics Is Nothing Then
         Exit Sub
     End If
@@ -393,12 +405,19 @@ Private Sub RenderHolePatternCircles(ByVal d As SldWorks.ModelDoc2)
         point = PatternSheetPoint(view, shape)
         radius = shape(PATTERN_RADIUS_INDEX) * view.ScaleDecimal
         Set sheet = AsDrawing(d).GetCurrentSheet
+        oldFocus = sheet.FocusLocked
+        sheet.FocusLocked = True
+        Set manager = d.SketchManager
+        oldAddToDB = manager.AddToDB
+        manager.AddToDB = True
         properties = sheet.GetProperties
         sheetScale = properties(SHEET_SCALE_NUMERATOR_PROPERTY) / properties(SHEET_SCALE_DENOMINATOR_PROPERTY)
         Set segment = d.SketchManager.CreateCenterLine((point(0) - radius - NATIVE_CENTERLINE_EXTENSION_M) / sheetScale, point(1) / sheetScale, 0, (point(0) + radius + NATIVE_CENTERLINE_EXTENSION_M) / sheetScale, point(1) / sheetScale, 0)
         segment.Color = DIMENSION_COLOR_BLACK
         Set segment = d.SketchManager.CreateCenterLine(point(0) / sheetScale, (point(1) - radius - NATIVE_CENTERLINE_EXTENSION_M) / sheetScale, 0, point(0) / sheetScale, (point(1) + radius + NATIVE_CENTERLINE_EXTENSION_M) / sheetScale, 0)
         segment.Color = DIMENSION_COLOR_BLACK
+        manager.AddToDB = oldAddToDB
+        sheet.FocusLocked = oldFocus
     Next item
     d.ClearSelection2 True
 End Sub

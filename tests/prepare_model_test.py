@@ -11,7 +11,7 @@ from rebuild_native import rebuild
 from vba_sources import read_source
 
 
-def prepare(model, directory, diagnostic_failures=False, reuse=False):
+def prepare(model, directory, diagnostic_failures=False, reuse=False, overrides=()):
     directory = external_path(directory)
     if directory.exists() and not reuse:
         raise ValueError(f'Use a fresh test directory: {directory}')
@@ -26,6 +26,11 @@ def prepare(model, directory, diagnostic_failures=False, reuse=False):
         if '=' in line and not line.lstrip().startswith(';'):
             key, value = line.split('=', 1)
             settings[key.strip()] = value.strip()
+    for override in overrides:
+        key, separator, value = override.partition('=')
+        if not separator or not key.strip():
+            raise ValueError('Use --setting KEY=VALUE')
+        settings[key.strip()] = value.strip()
     settings.update(MaxJobs='1', TemplatesDirectory=str(REPOSITORY / 'templates'),
                     LauncherInput=str(target), LauncherOutput=str(directory / 'output'),
                     LauncherProgress=str(directory / 'progress.tsv'))
@@ -58,5 +63,6 @@ if __name__ == '__main__':
     parser.add_argument('--work-directory', type=Path, required=True)
     parser.add_argument('--diagnostic-failures', action='store_true', help='Export failed layouts only in the isolated test fixture')
     parser.add_argument('--reuse', action='store_true', help='Rebuild an existing single-model fixture while preserving its checkpoint')
+    parser.add_argument('--setting', action='append', default=[], help='Override a generation setting; fixture input and output remain isolated')
     args = parser.parse_args()
-    prepare(args.model, args.work_directory, args.diagnostic_failures, args.reuse)
+    prepare(args.model, args.work_directory, args.diagnostic_failures, args.reuse, args.setting)

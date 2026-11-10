@@ -19,13 +19,16 @@ names = ['UseCoordinateDots', 'CoordinateMarkerPadding', 'CoordinateTextCenter',
          'ReferencePairCost', 'LocalNeighborBands', 'LocalDatumPairs', 'ResetCoordinatePlans',
          'CompatibleRequiredCoordinateLanes', 'CompatibleBalanceCoordinateSides',
          'CompatiblePackCoordinateSide', 'CoordinateRegionEdge', 'NativeBoundsInside',
-         'NativeBoxesOverlap', 'NativeLeaderCrossesBox', 'NativeIntervalKey',
+         'NativeBoxesOverlap', 'NativeLeaderCrossesBox', 'NativeCandidateLeaderHitsBox', 'NativeGridIndex', 'NativeLabelRowCost', 'PanelLabelPriority', 'NativeIntervalKey',
          'NativePointKey', 'NativeReflectedPoint', 'NativePairKey', 'NativeDirectionKey',
-         'NativeTextBounds', 'NativeExpandBounds', 'NativeProtectedSpan', 'OppositeViewTransform', 'SixPrimaryOrientation', 'HolePatternShape', 'QuarterTurnPoint', 'OpenBoreSlotPlan', 'ProfileSegmentAxis', 'ProfileNotch', 'ProfileRoot', 'ProfilePolygonLocation', 'ProfilePointInMaterial', 'ProfileLineCutsMaterial', 'ProfileBaseClear', 'ProfileReferenceWitness']
+         'NativeTextBounds', 'NativeExpandBounds', 'NativeProtectedSpan', 'NativeFixedLinearSegment', 'OppositeViewTransform', 'SixPrimaryOrientation', 'HolePatternShape', 'QuarterTurnPoint', 'OpenBoreSlotPlan', 'ProfileSegmentAxis', 'ProfileNotch', 'ProfileRoot', 'ProfilePolygonLocation', 'ProfilePointInMaterial', 'ProfileLineCutsMaterial', 'ProfileBaseClear', 'ProfileReferenceWitness', 'PanelMaterialBounds', 'PanelReferenceWitness', 'PanelBoxTouchesMaterial', 'PanelAlignedOffset']
 routines = []
 for name in names:
     body = re.search(r'(?ms)^Private (Function|Sub) ' + name + r'\(.*?^End (?:Function|Sub)', source)[0]
     body = re.sub(r'^Private ', '', body)
+    if name == 'NativeTextBounds':
+        body = body.replace(', Optional ByVal owner As Object = Nothing', '')
+        body = body.replace('    Dim result As Variant,', '    Dim owner\n    Set owner = Nothing\n    Dim result As Variant,', 1)
     if name == 'LocalDatumPairs':
         body = body.replace('Dim result As New Collection,', 'Dim result,')
         body = body.replace('    count = coordinates.Count', '    Set result = CreateObject("Scripting.Dictionary")\n    count = coordinates.Count')
@@ -53,6 +56,42 @@ Sub Check(ByVal condition, ByVal message)
         WScript.Echo message
         WScript.Quit 1
     End If
+End Sub
+
+Sub CheckGridOrder()
+    Dim count, preferred, center, order, index, previousDistance, seen, y, height, anchor, edge, bound
+    For count = 1 To 25
+        For preferred = -2 To count + 1
+            center = preferred
+            If center < 0 Then
+                center = 0
+            End If
+            If center >= count Then
+                center = count - 1
+            End If
+            previousDistance = -1
+            Set seen = CreateObject("Scripting.Dictionary")
+            For order = 0 To count - 1
+                index = NativeGridIndex(order, count, preferred)
+                Check index >= 0 And index < count, "Grid index outside its bounds"
+                Check Not seen.Exists(index), "Grid position visited twice"
+                Check Abs(index - center) >= previousDistance, "Grid did not search nearest positions first"
+                seen.Add index, True
+                previousDistance = Abs(index - center)
+            Next
+            Check seen.Count = count, "Grid search lost a candidate"
+        Next
+    Next
+    For y = -20 To 20
+        For height = 1 To 7
+            For anchor = -20 To 20
+                bound = NativeLabelRowCost(y, height, anchor)
+                For edge = 0 To height Step height / 2
+                    Check bound <= (y + edge - anchor) ^ 2 + 0.000000001, "Row pruning can discard a better label"
+                Next
+            Next
+        Next
+    Next
 End Sub
 
 Function Plans(ByVal count, ByVal spacing, ByVal span)
@@ -199,6 +238,9 @@ Sub Main()
     Check NativeLeaderCrossesBox(4, 4, 0, 0, Array(1, 1, 2, 2)), "Reversed diagonal through text missed"
     Check Not NativeLeaderCrossesBox(0, 0, 4, 0, Array(1, 1, 2, 2)), "Horizontal leader outside text rejected"
     Check Not NativeLeaderCrossesBox(0, 0, 0, 4, Array(1, 1, 2, 2)), "Vertical leader outside text rejected"
+    Check Not NativeCandidateLeaderHitsBox(0,0,Array(2,2,4,3),Array(2.9,1.4,3.1,1.6),True), "An unused alternate attachment blocked a clear panel leader"
+    Check NativeCandidateLeaderHitsBox(0,0,Array(2,2,4,3),Array(0.9,0.9,1.1,1.1),True), "The active panel leader was allowed through text"
+    Check NativeCandidateLeaderHitsBox(0,0,Array(2,2,4,3),Array(2.9,1.4,3.1,1.6),False), "The ordinary two-path policy changed"
     Check NativeIntervalKey(0.01, 0.02, 0, True) = NativeIntervalKey(-0.02, -0.01, 0, True), "Verified mirror intervals did not group"
     Check NativeIntervalKey(0.01, 0.02, 0, False) <> NativeIntervalKey(-0.02, -0.01, 0, False), "Intervals grouped without symmetry evidence"
     Check NativeIntervalKey(0.01, 0.02, 0, False) <> NativeIntervalKey(0.03, 0.04, 0, False), "Equal lengths at different source coordinates grouped"
@@ -246,6 +288,10 @@ Sub Main()
     Check bounds(2) - bounds(0) > 0.0093, "A short shoulder truncated the longer text bounds"
     polygon = Array(Array(0,0),Array(0.004,0),Array(0.004,0.004),Array(0.006,0.004),Array(0.006,0),Array(0.01,0),Array(0.01,0.01),Array(0,0.01))
     loops = Array(polygon)
+    Check Not PanelBoxTouchesMaterial(Array(0.0042,0.001,0.0058,0.003),loops), "A label in an open cutout was rejected as bounding-box material"
+    Check PanelBoxTouchesMaterial(Array(0.0035,0.001,0.0045,0.003),loops), "A label crossing a cutout wall was accepted"
+    Check PanelBoxTouchesMaterial(Array(-0.001,-0.001,0.011,0.011),loops), "Material enclosed by a label was missed"
+    Check Not PanelBoxTouchesMaterial(Array(0.0045,-0.005,0.0055,-0.001),loops), "An external panel label was rejected"
     Check ProfilePointInMaterial(Array(0.002,0.002),loops), "Profile solid land was missed"
     Check Not ProfilePointInMaterial(Array(0.005,0.002),loops), "An open notch was classified as material"
     Check Not ProfilePointInMaterial(Array(0.004,0.002),loops), "A boundary was classified as solid interior"
@@ -260,22 +306,37 @@ Sub Main()
     Check Not ProfileReferenceWitness(Array(0.004,0.002),Array(-0.01,0.002),Array(0.004,0.004),Array(0.004,0),1), "An arbitrary horizontal leader was treated as an extension"
     Check Not ProfileReferenceWitness(Array(0.004,0.004),Array(-0.01,0.003),Array(0.004,0.004),Array(0.004,0),1), "A diagonal leader was treated as an extension"
     Check Not ProfileReferenceWitness(Array(0.004,0.004),Array(0.004,0),Array(0.004,0.004),Array(0.004,0),1), "A dimension baseline was treated as an extension"
+    Check PanelReferenceWitness(Array(0.0012,-0.0009),Array(0.004,-0.003),Array(0,0),Array(0.03,0.04)), "An aligned extension at its native reference was rejected"
+    Check Not PanelReferenceWitness(Array(0.015,0.02),Array(0.019,0.017),Array(0,0),Array(0.03,0.04)), "An aligned leader through material was treated as an extension"
+    Check Not PanelReferenceWitness(Array(0,0),Array(0.03,0.04),Array(0,0),Array(0.03,0.04)), "An aligned baseline was treated as an extension"
+    Check NativeFixedLinearSegment(Array(-0.005,0,0.025,0),Array(0,0),Array(0.02,0)), "A fixed measurement baseline was lost"
+    Check NativeFixedLinearSegment(Array(0,0.03,0,-0.0015),Array(0,0),Array(0.02,0)), "A model-linked witness was lost"
+    Check Not NativeFixedLinearSegment(Array(0.01,0,0.03,-0.01),Array(0,0),Array(0.02,0)), "An old movable leader remained a fixed obstacle"
+    Check Not NativeFixedLinearSegment(Array(0.03,-0.01,0.04,-0.01),Array(0,0),Array(0.02,0)), "An old text shoulder remained a fixed obstacle"
+    Check Not NativeFixedLinearSegment(Array(0.01,0,0.01,-0.01),Array(0,0),Array(0.02,0)), "A perpendicular text leader was confused with an endpoint witness"
+    polygon = Array(Array(-1,-0.5),Array(0.8,-0.5),Array(1,-0.3),Array(1,0.5),Array(-1,0.5))
+    Check Abs(PanelAlignedOffset(Array(0.8,-0.5),1/Sqr(2),-1/Sqr(2),polygon)-GOST_OBJECT_OFFSET_M)<0.000000001, "An outward chamfer dimension was pushed across the whole panel"
+    Check PanelAlignedOffset(Array(0.8,-0.5),-1/Sqr(2),1/Sqr(2),polygon)>1, "The inward chamfer normal was not distinguished"
+    Check PanelLabelPriority(0.0001433,False,False)+0.007>PanelLabelPriority(0.000406,False,False)+0.013, "A repeated wide label consumed the smallest measurement corridor first"
+    Check PanelLabelPriority(0.0001433,False,False)>PanelLabelPriority(0.012,False,False), "A short dimension did not receive placement priority"
+    Check PanelLabelPriority(0.004,True,False)>PanelLabelPriority(0.0001433,False,False), "An inclined corner lost its constrained placement priority"
     polygon = Array(Array(0.00498,0),Array(0.005,0),Array(0.005,0.01),Array(0.00498,0.01))
     Check ProfileLineCutsMaterial(Array(0,0.005),Array(0.02,0.005),Array(polygon)), "A narrow land between sampling positions was missed"
     WScript.Echo "PASS: GOST markers, spacing, lane capacity, detail bounds, leaders, and exact profile-material intersections"
 End Sub
 
+CheckGridOrder
 Main
 '''
 root = work_path('dimension_layout')
 root.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(dir=root) as folder:
     script = Path(folder) / 'layout.vbs'
-    script.write_text('Option Explicit\n' + '\n'.join(constants + routines) + '\n' + harness, 'ascii')
+    script.write_text('Option Explicit\n' + '\n'.join(constants + routines) + '\n' + harness, 'utf-16')
     result = subprocess.run([str(Path(os.environ['WINDIR']) / 'System32/cscript.exe'),
                              '//nologo', str(script)], capture_output=True, timeout=15)
     if result.returncode:
-        lines = script.read_text('ascii').splitlines()
+        lines = script.read_text('utf-16').splitlines()
         location = re.search(rb'\((\d+),', result.stderr)
         line = int(location[1]) if location else 1
         raise AssertionError((result.stdout, result.stderr, list(enumerate(lines[max(0,line-3):line+2], max(1,line-2)))))

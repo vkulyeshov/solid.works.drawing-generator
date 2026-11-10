@@ -1,7 +1,10 @@
 param([Parameter(Mandatory=$true)][string]$WorkDirectory,
       [string]$ModelFileName = 'Matochina4x100.SLDPRT',
       [switch]$InventoryOnly,
-      [switch]$RemapInventoryReferences)
+      [switch]$RemapInventoryReferences,
+      [switch]$ProfileGeometryOnly,
+      [switch]$InspectOnly,
+      [ValidateRange(60,3600)][int]$MacroTimeoutSeconds = 480)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestPaths.ps1')
 $work = Get-ExternalTestPath $WorkDirectory
@@ -21,8 +24,9 @@ using System.Security.Cryptography;
 using SolidWorks.Interop.sldworks;
 public static class SixViewGenerationTest {
     const int PartDocument=1, AssemblyDocument=2, DrawingDocument=3, SilentReadOnly=3, OffscreenOffset=1024;
+    const int SolidBody=0;
+    const int CalloutAbove=3, CalloutAboveDefinition=7, CalloutBelowDefinition=8;
     const int VirtualLeft=76, VirtualTop=77, VirtualWidth=78, VirtualHeight=79;
-    const int MacroTimeoutMilliseconds=480000;
     const int InventoryTimeoutMilliseconds=900000;
     const int StartupTimeoutMilliseconds=120000, StartupPollMilliseconds=250;
     const int ShutdownGraceMilliseconds=5000;
@@ -138,10 +142,13 @@ public static class SixViewGenerationTest {
         cleanup.Join(ShutdownGraceMilliseconds);
     }
     static void InspectResult(SldWorks sw,string work) {
-        CloseTestDocuments(sw,work);
         string output=Path.Combine(work,"output");
         string[] files=Directory.GetFiles(Path.Combine(output,"Drawings"),"*.SLDDRW");
         if(files.Length!=1) throw new Exception("Expected one test drawing");
+        // Keep the input document open. Closing every referenced document can
+        // invalidate enumerated COM objects or release a background OLE server.
+        var open=sw.GetOpenDocumentByName(files[0]) as ModelDoc2;
+        if(open!=null) sw.CloseDoc(open.GetTitle());
         int error=0,warning=0;
         var doc=(ModelDoc2)sw.OpenDoc6(files[0],DrawingDocument,SilentReadOnly,"",ref error,ref warning);
         if(doc==null) throw new Exception("Cannot reopen generated drawing: "+error);
@@ -156,6 +163,8 @@ public static class SixViewGenerationTest {
             while(view!=null) {
                 double[] box=(double[])view.GetOutline();
                 report.AppendLine("VIEW\t"+name+"\t"+view.Name+"\t"+Number(box[0])+"\t"+Number(box[1])+"\t"+Number(box[2])+"\t"+Number(box[3]));
+                var transform=(double[])((MathTransform)view.ModelToViewTransform).ArrayData;
+                report.AppendLine("TRANSFORM\t"+name+"\t"+view.Name+"\t"+string.Join("\t",Array.ConvertAll(transform,Number)));
                 var notes=view.GetNotes() as object[];
                 if(notes!=null) foreach(Note note in notes) {
                     var extent=note.GetExtent() as double[];
@@ -173,6 +182,17 @@ public static class SixViewGenerationTest {
                     report.AppendLine("APPEARANCE\t"+owner+"\t"+annotation.Color+"\t"+annotation.LayerOverride);
                     report.AppendLine("ARROWMODE\t"+owner+"\t"+display.ArrowSide);
                     report.AppendLine("DIM\t"+owner+"\t"+display.Type2+"\t"+Number(dimension.SystemValue)+"\t"+dimension.FullName+"\t"+display.IsHoleCallout()+"\t"+string.Join(" ",text)+"\t"+data.GetArrowHeadCount());
+                    if(display.IsHoleCallout()) report.AppendLine("CALLOUT\t"+owner+"\t"+Clean(display.GetText(CalloutAboveDefinition))+"\t"+Clean(display.GetText(CalloutAbove))+"\t"+Clean(display.GetText(CalloutBelowDefinition)));
+                    foreach(var dataKind in new[]{"display","annotation"}) {
+                        var textData=dataKind=="display" ? data : (DisplayData)annotation.GetDisplayData();
+                        if(textData==null) continue;
+                        for(int i=0;i<textData.GetTextCount();i++) {
+                            double[] textPosition=(double[])textData.GetTextPositionAtIndex(i);
+                            report.AppendLine("TEXTGEOMETRY\t"+owner+"\t"+dataKind+"\t"+i+"\t"+textData.GetTextRefPositionAtIndex(i)+"\t"+
+                                Number(textPosition[0])+"\t"+Number(textPosition[1])+"\t"+Number(textData.GetTextHeightAtIndex(i))+"\t"+
+                                Number(textData.GetTextAngleAtIndex(i))+"\t"+textData.GetTextFontAtIndex(i)+"\t"+Clean(textData.GetTextAtIndex(i)));
+                        }
+                    }
                     if(data.GetTextCount()>0) {
                         double[] position=(double[])data.GetTextPositionAtIndex(0);
                         report.AppendLine("TEXT\t"+owner+"\t"+Number(position[0])+"\t"+Number(position[1]));
@@ -202,7 +222,36 @@ public static class SixViewGenerationTest {
         }
         File.WriteAllText(Path.Combine(output,"saved-dimensions.tsv"),report.ToString(),Encoding.Unicode);
     }
-    public static void Run(string work,string modelFileName,bool inventoryOnly,bool remapReferences) {
+    static void InspectProfileGeometry(ModelDoc2 model,string work) {
+        var part=model as PartDoc;
+        if(part==null) throw new Exception("Profile geometry inspection requires a copied part.");
+        var bodies=part.GetBodies2(SolidBody,true) as object[];
+        if(bodies==null || bodies.Length!=1) throw new Exception("Profile inspection requires one solid body.");
+        Face2 cap=null;
+        foreach(Face2 face in (object[])((Body2)bodies[0]).GetFaces())
+            if(((Surface)face.GetSurface()).IsPlane() && (cap==null || face.GetArea()>cap.GetArea())) cap=face;
+        if(cap==null) throw new Exception("The copied profile has no planar cap.");
+        var result=new StringBuilder("{\"loops\":[");
+        bool firstLoop=true;
+        foreach(Loop2 loop in (object[])cap.GetLoops()) {
+            if(!firstLoop) result.Append(',');firstLoop=false;
+            result.Append("{\"outer\":").Append(loop.IsOuter() ? "true" : "false").Append(",\"segments\":[");
+            bool firstEdge=true;
+            foreach(Edge edge in (object[])loop.GetEdges()) {
+                if(!((Curve)edge.GetCurve()).IsLine()) throw new Exception("The inspected profile contains a curved boundary.");
+                if(!firstEdge) result.Append(',');firstEdge=false;
+                var a=(double[])((Vertex)edge.GetStartVertex()).GetPoint();
+                var b=(double[])((Vertex)edge.GetEndVertex()).GetPoint();
+                result.Append("[[").Append(string.Join(",",Array.ConvertAll(a,Number))).Append("],[").Append(string.Join(",",Array.ConvertAll(b,Number))).Append("]]");
+            }
+            result.Append("]}");
+        }
+        result.Append("]}");
+        File.WriteAllText(Path.Combine(work,"profile-geometry.json"),result.ToString(),Encoding.UTF8);
+    }
+    public static void Run(string work,string modelFileName,bool inventoryOnly,bool remapReferences,bool profileGeometryOnly,int macroTimeoutMilliseconds,bool inspectOnly) {
+        if(inspectOnly && (inventoryOnly || remapReferences || profileGeometryOnly))
+            throw new ArgumentException("InspectOnly requires a generated single-part fixture.");
         var prior=new HashSet<int>();
         foreach(Process process in Process.GetProcessesByName("SLDWORKS")) prior.Add(process.Id);
         Console.WriteLine("Starting an isolated SolidWorks process");
@@ -229,12 +278,22 @@ public static class SixViewGenerationTest {
             var active=(ModelDoc2)sw.ActivateDoc3(Path.GetFileName(input),false,0,ref error);
             if(active==null || !string.Equals(active.GetPathName(),input,StringComparison.OrdinalIgnoreCase))
                 throw new Exception("The copied test model did not become active.");
+            if(inspectOnly) {
+                InspectResult(sw,work);
+                Console.WriteLine("Persisted drawing inspection completed: "+Path.Combine(work,"output"));
+                return;
+            }
+            if(profileGeometryOnly) {
+                InspectProfileGeometry(model,work);
+                Console.WriteLine("Copied profile geometry inspection completed.");
+                return;
+            }
             // Each invocation must validate its own events, including fixture retries.
             File.WriteAllText(Path.Combine(work,"progress.tsv"),string.Empty,Encoding.Unicode);
             Console.WriteLine(inventoryOnly ? "Running copied saved-reference inventory" : "Running the canonical six-view generator");
             using(var watchdog=new System.Threading.Timer(delegate(object unused) {
                 try { if(ownedProcess!=null && !ownedProcess.HasExited) ownedProcess.Kill(); } catch(ArgumentException) { }
-            },null,inventoryOnly ? InventoryTimeoutMilliseconds : MacroTimeoutMilliseconds,System.Threading.Timeout.Infinite)) {
+            },null,inventoryOnly ? InventoryTimeoutMilliseconds : macroTimeoutMilliseconds,System.Threading.Timeout.Infinite)) {
                 if(!sw.RunMacro(Path.Combine(work,"generator.swp"),"Macro11",inventoryOnly ? "InspectInventory" : "main"))
                     throw new Exception("RunMacro returned false.");
             }
@@ -252,4 +311,4 @@ public static class SixViewGenerationTest {
 }
 '@
 Add-Type -TypeDefinition $source -ReferencedAssemblies $api
-[SixViewGenerationTest]::Run($work,$ModelFileName,$InventoryOnly.IsPresent,$RemapInventoryReferences.IsPresent)
+[SixViewGenerationTest]::Run($work,$ModelFileName,$InventoryOnly.IsPresent,$RemapInventoryReferences.IsPresent,$ProfileGeometryOnly.IsPresent,[int][TimeSpan]::FromSeconds($MacroTimeoutSeconds).TotalMilliseconds,$InspectOnly.IsPresent)

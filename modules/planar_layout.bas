@@ -55,22 +55,62 @@ Private Function PlanarDisplayLines(ByVal data As SldWorks.DisplayData) As Colle
     Set PlanarDisplayLines = result
 End Function
 
-Private Function PlanarTextPolygons(ByVal display As SldWorks.DisplayDimension, ByVal data As SldWorks.DisplayData, ByVal margin As Double) As Collection
+Private Function PlanarTextPolygons(ByVal display As SldWorks.DisplayDimension, ByVal data As SldWorks.DisplayData, ByVal margin As Double, Optional ByVal printed As Boolean = False) As Collection
     Dim result As New Collection, index As Long, corner As Long, p As Variant, polygon(3) As Variant
     Dim height As Double, width As Double, angle As Double, x As Double, y As Double, text As String, leading As Long, offset As Double
+    Dim face As String, originalWidth As Double, prefix As String, suffix As String
+    Dim format As SldWorks.TextFormat, textRatio As Double, anchor As Variant
+    textRatio = 1
+    If printed Then
+        Set format = display.GetAnnotation.GetTextFormat(SW_ANNOTATION_TEXT_FORMAT_FIRST)
+        anchor = display.GetAnnotation.GetPosition
+        If data.GetTextCount > 0 Then
+            If data.GetTextHeightAtIndex(0) > DIRECTION_ZERO_TOLERANCE Then
+                textRatio = format.CharHeight / data.GetTextHeightAtIndex(0)
+            End If
+        End If
+    End If
     For index = 0 To data.GetTextCount - 1
         p = data.GetTextPositionAtIndex(index)
         height = data.GetTextHeightAtIndex(index)
-        text = Replace(data.GetTextAtIndex(index), SW_DIMENSION_TOKEN_DIAMETER, ChrW$(DIAMETER_GLYPH_CODEPOINT))
+        text = data.GetTextAtIndex(index)
+        angle = data.GetTextAngleAtIndex(index)
+        face = ""
+        If printed Then
+            ' Imported display data may retain the source font height until
+            ' reload, while its text positions already follow the drawing.
+            height = height * textRatio
+            If display.IsHoleCallout Then
+                p(0) = anchor(0) + (p(0) - anchor(0)) * textRatio
+                p(1) = anchor(1) + (p(1) - anchor(1)) * textRatio
+            End If
+            face = format.TypeFaceName
+            ' Some COM Boolean results use 1 rather than VBA's -1. Do not
+            ' apply bitwise Not to that result: a callout is already composed.
+            If index = 0 And display.IsHoleCallout = False Then
+                originalWidth = PlanarMeasureTextWidth(display, text, height, True, face)
+                prefix = display.GetText(SW_DIMENSION_TEXT_PREFIX)
+                suffix = display.GetText(SW_DIMENSION_TEXT_SUFFIX)
+                If Len(Trim$(prefix)) > 0 And InStr(text, Trim$(prefix)) = 0 Then
+                    text = prefix & text
+                End If
+                If Len(Trim$(suffix)) > 0 And InStr(text, Trim$(suffix)) = 0 Then
+                    text = text & suffix
+                End If
+                width = PlanarMeasureTextWidth(display, text, height, True, face)
+                p(0) = p(0) - (width - originalWidth) / 2 * Cos(angle)
+                p(1) = p(1) - (width - originalWidth) / 2 * Sin(angle)
+            End If
+        End If
+        text = Replace(text, SW_DIMENSION_TOKEN_DIAMETER, ChrW$(DIAMETER_GLYPH_CODEPOINT))
         text = Replace(text, SW_DIMENSION_TOKEN_DEGREE, "°")
         leading = Len(text) - Len(LTrim$(text))
-        offset = PlanarMeasureTextWidth(display, Left$(text, leading), height)
+        offset = PlanarMeasureTextWidth(display, Left$(text, leading), height, printed, face)
         text = Trim$(text)
         If Len(text) = 0 Then
             GoTo NextPlanarText
         End If
-        width = PlanarMeasureTextWidth(display, text, height)
-        angle = data.GetTextAngleAtIndex(index)
+        width = PlanarMeasureTextWidth(display, text, height, printed, face)
         p(0) = p(0) + offset * Cos(angle)
         p(1) = p(1) + offset * Sin(angle)
         For corner = 0 To 3
@@ -580,6 +620,9 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
                         display.SetBrokenLeader2 False, SW_SOLID_LEADER_ALIGNED_TEXT
                     End If
                 Next side
+                If planarCandidateBudget > 0 And result.Count >= planarCandidateBudget Then
+                    GoTo PlanarCandidatesReady
+                End If
             Next row
             Set PlanarDimensionCandidates = result
             Exit Function
@@ -626,9 +669,13 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
                     End If
                     AddPlanarLayoutCandidate d, display, view, region, obstacles, result, cx + distance * Cos(angle), cy + distance * Sin(angle), expected:=value, oppositeAngle:=(opposite > 0)
                 Next direction
+                If planarCandidateBudget > 0 And result.Count >= planarCandidateBudget Then
+                    GoTo PlanarCandidatesReady
+                End If
             Next row
         Next centered
     Next opposite
+PlanarCandidatesReady:
     If oppositeChanged Then
         d.ClearSelection2 True
         display.GetAnnotation.Select3 False, Nothing
@@ -870,6 +917,8 @@ Private Sub FinishPlanarDimensionLayout(ByVal d As SldWorks.ModelDoc2, ByVal vie
         planarLayoutMaterial.Add view.Name, rawPolygon
         planarLayoutOutlines.Add view.Name, view.GetOutline
         planarLayoutVisibleMaterial.Add view.Name, PlanarClipPolygon(rawPolygon, view.GetOutline)
+        planarCandidateBudget = PLANAR_LAYOUT_CANDIDATE_LIMIT
+BuildPlanarViewCandidates:
         Set records = New Collection
         Set chosen = New Collection
         Set obstacles = New Collection
@@ -879,7 +928,9 @@ Private Sub FinishPlanarDimensionLayout(ByVal d As SldWorks.ModelDoc2, ByVal vie
         Set display = view.GetFirstDisplayDimension5
         Do While Not display Is Nothing
             Set planarLayoutRejections = CreateObject("Scripting.Dictionary")
-            initialValues.Add display.GetNameForSelection, display.GetDimension2(SW_DIMENSION_INDEX_FIRST).SystemValue
+            If Not initialValues.Exists(display.GetNameForSelection) Then
+                initialValues.Add display.GetNameForSelection, display.GetDimension2(SW_DIMENSION_INDEX_FIRST).SystemValue
+            End If
             Set candidates = PlanarDimensionCandidates(d, display, view, region, obstacles)
             number = 0
             For Each candidate In candidates
@@ -919,12 +970,19 @@ Private Sub FinishPlanarDimensionLayout(ByVal d As SldWorks.ModelDoc2, ByVal vie
             record.Add "name", display.GetNameForSelection
             record.Add "candidates", candidates
             records.Add record
-            displays.Add display.GetNameForSelection, display
+            If Not displays.Exists(display.GetNameForSelection) Then
+                displays.Add display.GetNameForSelection, display
+            End If
             Set display = display.GetNext5
         Loop
         steps = 0
         Set planarLayoutCompatibility = CreateObject("Scripting.Dictionary")
         If Not SolvePlanarCandidates(records, chosen, steps) Then
+            If planarCandidateBudget > 0 Then
+                Log "PLANAR bounded candidate pass needs more alternatives; expanding this view only: " & view.Name
+                planarCandidateBudget = 0
+                GoTo BuildPlanarViewCandidates
+            End If
             Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "No non-overlapping planar dimension assignment: " & view.Name & "; search=" & steps
         End If
         ImprovePlanarAssignment records, chosen

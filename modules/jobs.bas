@@ -10,6 +10,15 @@ Private Sub ProcessJob(ByVal j As Object)
     Dim firstSheetName As String
     On Error GoTo Failed
     profileRoleDrawing = False
+    profilePagedMode = False
+    profileCompactMode = False
+    profileFamilyMode = False
+    Set profilePanelOpenings = Nothing
+    Set profilePanelFrame = Nothing
+    Set profilePanelFeatures = Nothing
+    Set profilePageInitialView = Nothing
+    Set profilePageRegions = Nothing
+    Set profilePageCrops = Nothing
     Set planarDimensionRequests = Nothing
     Set planarContourPoints = Nothing
     Set profileRawLoops = Nothing
@@ -94,7 +103,12 @@ Private Sub ProcessJob(ByVal j As Object)
     ConfigureDrawing d
     If Not isAssembly And Setting("DimensionPlanning", "roles") = "roles" And Setting("AutoDimensions", "1") = "1" Then
         If MakeProfileRoleDrawing(d, doc, cfg, b) Then
-            AddTechnicalNotes d, doc, cfg, b, CLng(j("qty")), False
+            AsDrawing(d).ActivateSheet firstSheetName
+            If profileCompactMode Or profileFamilyMode Then
+                AddText d, "Товщина " & Round(profilePageThickness * MILLIMETRES_PER_METRE, LINEAR_DECIMAL_PLACES) & " мм; кількість у виробі: " & j("qty") & ".", CONTENT_LEFT_M, COMPACT_NOTE_Y_M, TEXT_HEIGHT_SMALL_M, 0
+            Else
+                AddTechnicalNotes d, doc, cfg, b, CLng(j("qty")), False
+            End If
             GoTo PersistDrawing
         End If
         If MakePlanarFeatureDrawing(d, doc, cfg, b, outName) Then
@@ -290,16 +304,19 @@ Private Sub ProcessJob(ByVal j As Object)
         AddOppositeViewSheet d, doc, cfg, b, mainView, bottomView, sideView, isoView, viewScaleValue, CLng(j("qty"))
     End If
 PersistDrawing:
+    JobStage j, "Normalizing dimension styles"
     NormalizeDimensions d
-    AsDrawing(d).ActivateSheet sheet.GetName
+    AsDrawing(d).ActivateSheet firstSheetName
     d.ActiveView.EnableGraphicsUpdate = True
     d.ForceRebuild3 False
     d.ViewZoomtofit2
     ' Persist derived flat configurations in the snapshot only.
+    JobStage j, "Saving snapshot model"
     doc.ShowConfiguration2 oldCfg
     If doc.Save3(SW_SAVE_SILENT, er, wr) = False Then
         Err.Raise vbObjectError + ERR_SAVE_MODEL, , "Cannot save snapshot model: " & er
     End If
+    JobStage j, "Saving drawing"
     success = d.Extension.SaveAs(runDir & DRAWINGS_RELATIVE_DIRECTORY & outName & DRAWING_EXTENSION, SW_SAVE_CURRENT_VERSION, SW_SAVE_SILENT, Nothing, er, wr)
     If success = False Then
         Err.Raise vbObjectError + ERR_SAVE_DRAWING, , "Drawing save failed: " & er
@@ -384,6 +401,10 @@ PersistDrawing:
         FinishNativeDimensionLayout d
     End If
     ApplyDrawingDimensionAppearance d
+    If useNativeDimensions And Not profileRoleDrawing And Setting("DimensionPlanning", "roles") = "roles" Then
+        JobStage j, "Checking persisted native labels"
+        FinishPersistedNativeLabels d
+    End If
     WriteDimensionCoverage d, outName
     AsDrawing(d).ActivateSheet firstSheetName
     Log "SAVE rebuilt drawing " & outName

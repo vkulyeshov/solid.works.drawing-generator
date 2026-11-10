@@ -11,7 +11,7 @@ End Function
 Private Function CreateDetailProfile(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal x As Double, ByVal y As Double, ByVal paperRadius As Double) As SldWorks.SketchSegment
     Dim sketch As SldWorks.Sketch, util As SldWorks.MathUtility, point As SldWorks.MathPoint, coordinates As Variant
     Dim active As SldWorks.ModelDoc2, error As Long, stage As String, errorNumber As Long, errorText As String
-    Dim manager As SldWorks.SketchManager, oldAddToDB As Boolean
+    Dim manager As SldWorks.SketchManager, oldAddToDB As Boolean, oldFocus As Boolean
     Dim target(2) As Double
     On Error GoTo Failed
     stage = "drawing activation"
@@ -31,6 +31,8 @@ Private Function CreateDetailProfile(ByVal d As SldWorks.ModelDoc2, ByVal v As S
     Log "DETAIL PROFILE COORDINATES sheet=" & x & "," & y & "; sketch=" & coordinates(0) & "," & coordinates(1) & "; view scale=" & v.ScaleDecimal
     stage = "circle creation"
     AsDrawing(d).ActivateView v.Name
+    oldFocus = v.FocusLocked
+    v.FocusLocked = True
     d.ClearSelection2 True
     ' Drawing-view sketch coordinates are unscaled and relative to the view origin.
     Set manager = d.SketchManager
@@ -38,6 +40,7 @@ Private Function CreateDetailProfile(ByVal d As SldWorks.ModelDoc2, ByVal v As S
     manager.AddToDB = True
     Set CreateDetailProfile = manager.CreateCircleByRadius(coordinates(0), coordinates(1), 0, paperRadius / v.ScaleDecimal)
     manager.AddToDB = oldAddToDB
+    v.FocusLocked = oldFocus
     Exit Function
 Failed:
     errorNumber = Err.Number
@@ -46,6 +49,7 @@ Failed:
     If Not manager Is Nothing Then
         manager.AddToDB = oldAddToDB
     End If
+    v.FocusLocked = oldFocus
     On Error GoTo 0
     Err.Raise errorNumber, "CreateDetailProfile", stage & ": " & errorText
 End Function

@@ -12,6 +12,29 @@ Private Type DrawingTextExtent
     Height As Long
 End Type
 
+Private Type DrawingFontMetrics
+    Height As Long
+    Ascent As Long
+    Descent As Long
+    InternalLeading As Long
+    ExternalLeading As Long
+    AverageWidth As Long
+    MaximumWidth As Long
+    Weight As Long
+    Overhang As Long
+    DigitizedAspectX As Long
+    DigitizedAspectY As Long
+    FirstCharacter As Integer
+    LastCharacter As Integer
+    DefaultCharacter As Integer
+    BreakCharacter As Integer
+    Italic As Byte
+    Underlined As Byte
+    StruckOut As Byte
+    PitchAndFamily As Byte
+    CharacterSet As Byte
+End Type
+
 #If VBA7 Then
 Private Declare PtrSafe Function ShowWindow Lib "user32" (ByVal windowHandle As LongPtr, ByVal command As Long) As Long
 Private Declare PtrSafe Function IsWindowVisible Lib "user32" (ByVal windowHandle As LongPtr) As Long
@@ -22,6 +45,7 @@ Private Declare PtrSafe Function CreateCompatibleDC Lib "gdi32" (ByVal device As
 Private Declare PtrSafe Function CreateFontW Lib "gdi32" (ByVal height As Long, ByVal width As Long, ByVal escapement As Long, ByVal orientation As Long, ByVal weight As Long, ByVal italic As Long, ByVal underline As Long, ByVal strikeout As Long, ByVal characterSet As Long, ByVal outputPrecision As Long, ByVal clipPrecision As Long, ByVal quality As Long, ByVal pitch As Long, ByVal face As LongPtr) As LongPtr
 Private Declare PtrSafe Function SelectObject Lib "gdi32" (ByVal device As LongPtr, ByVal item As LongPtr) As LongPtr
 Private Declare PtrSafe Function GetTextExtentPoint32W Lib "gdi32" (ByVal device As LongPtr, ByVal text As LongPtr, ByVal count As Long, ByRef extent As DrawingTextExtent) As Long
+Private Declare PtrSafe Function GetTextMetricsW Lib "gdi32" (ByVal device As LongPtr, ByRef metrics As DrawingFontMetrics) As Long
 Private Declare PtrSafe Function DeleteObject Lib "gdi32" (ByVal item As LongPtr) As Long
 Private Declare PtrSafe Function DeleteDC Lib "gdi32" (ByVal device As LongPtr) As Long
 #Else
@@ -34,6 +58,7 @@ Private Declare Function CreateCompatibleDC Lib "gdi32" (ByVal device As Long) A
 Private Declare Function CreateFontW Lib "gdi32" (ByVal height As Long, ByVal width As Long, ByVal escapement As Long, ByVal orientation As Long, ByVal weight As Long, ByVal italic As Long, ByVal underline As Long, ByVal strikeout As Long, ByVal characterSet As Long, ByVal outputPrecision As Long, ByVal clipPrecision As Long, ByVal quality As Long, ByVal pitch As Long, ByVal face As Long) As Long
 Private Declare Function SelectObject Lib "gdi32" (ByVal device As Long, ByVal item As Long) As Long
 Private Declare Function GetTextExtentPoint32W Lib "gdi32" (ByVal device As Long, ByVal text As Long, ByVal count As Long, ByRef extent As DrawingTextExtent) As Long
+Private Declare Function GetTextMetricsW Lib "gdi32" (ByVal device As Long, ByRef metrics As DrawingFontMetrics) As Long
 Private Declare Function DeleteObject Lib "gdi32" (ByVal item As Long) As Long
 Private Declare Function DeleteDC Lib "gdi32" (ByVal device As Long) As Long
 #End If

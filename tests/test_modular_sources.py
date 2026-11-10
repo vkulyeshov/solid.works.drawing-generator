@@ -115,6 +115,18 @@ class ModularSourceTests(unittest.TestCase):
         path.write_text(path.read_text('utf-8').rstrip(), encoding='utf-8')
         self.assertIn('End Sub\nPublic Sub main()', read_source(self.project))
 
+    def test_sub_cannot_be_used_as_a_function(self):
+        self.write_module('main', 'Public Sub main()\n    Dim value As Variant\n'
+                          '    value = SetMessage()\nEnd Sub\n')
+        with self.assertRaisesRegex(ValueError, 'Sub used as a function: SetMessage'):
+            read_source(self.project)
+
+    def test_sub_call_text_is_not_executable(self):
+        self.write_module('main', 'Public Sub main()\n    Dim value As String\n'
+                          '    value = "value = SetMessage()"\n'
+                          '    Call SetMessage\nEnd Sub\n')
+        read_source(self.project)
+
     def test_nested_for_control_is_rejected_before_native_compilation(self):
         self.write_module('helpers', 'Private Sub SetMessage()\n    Dim item As Variant\n'
                           '    For Each item In Array(1, 2)\n'
@@ -129,6 +141,18 @@ class ModularSourceTests(unittest.TestCase):
                           "    ' For Each item In Array(1, 2)\n"
                           '    For Each item In Array(3, 4)\n    Next item\nEnd Sub\n')
         self.assertIn('message = "Next item: For item"', read_source(self.project))
+
+    def test_scale_variable_is_rejected_before_native_compilation(self):
+        for declaration in ['Dim scale As Double', 'Dim x As Double, SCALE As Double']:
+            with self.subTest(declaration=declaration):
+                self.write_module('helpers', 'Private Sub SetMessage()\n    ' + declaration + '\nEnd Sub\n')
+                with self.assertRaisesRegex(ValueError, 'Use viewScaleValue'):
+                    read_source(self.project)
+
+    def test_scale_dictionary_key_and_api_property_are_allowed(self):
+        self.write_module('helpers', 'Private Sub SetMessage()\n    Dim viewScaleValue As Double\n'
+                          '    viewScaleValue = view.ScaleDecimal\n    item.Add "scale", viewScaleValue\nEnd Sub\n')
+        read_source(self.project)
 
 
 if __name__ == '__main__':

@@ -324,7 +324,7 @@ Private Sub AssignSixViewDimensions(ByVal d As SldWorks.ModelDoc2)
                         Next sourceName
                     End If
                     Set display = winner("display")
-                    display.SetText SW_DIMENSION_TEXT_SUFFIX, display.GetText(SW_DIMENSION_TEXT_SUFFIX) & " (" & placeCount & " місця)"
+                    display.SetText SW_DIMENSION_TEXT_PREFIX, CStr(placeCount) & "x " & display.GetText(SW_DIMENSION_TEXT_PREFIX)
                 End If
             End If
         End If
