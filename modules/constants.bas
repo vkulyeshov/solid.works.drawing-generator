@@ -261,6 +261,12 @@ Private Const JOB_NUMBER_FORMAT As String = "000"
 Private Const GEOMETRY_KEY_FORMAT As String = "0.000000"
 Private Const DIMENSION_NUMBER_FORMAT As String = "0.00"
 Private Const DEFAULT_BATCH_SIZE_TEXT As String = "8"
+Private Const DEFAULT_PLANAR_LABEL_PREPASS As String = "0"
+' 1 models farther candidate rows of linear planar dimensions from one native row and checks only the result in SolidWorks.
+Private Const DEFAULT_PLANAR_MODEL_CANDIDATES As String = "1"
+' Modelled candidates: an extension-line foot lies at a measured point within these distances along and across the line.
+Private Const PLANAR_MODEL_ALONG_TOLERANCE_M As Double = 0.0005
+Private Const PLANAR_MODEL_FOOT_TOLERANCE_M As Double = 0.003
 Private Const DESCRIPTION_WRAP_CHARACTERS As Long = 28
 Private Const MATERIAL_WRAP_CHARACTERS As Long = 38
 Private Const LINEAR_DECIMAL_PLACES As Long = 2
@@ -270,6 +276,7 @@ Private Const ANGULAR_DECIMAL_PLACES As Long = 1
 Private Const PI As Double = 3.14159265358979
 Private Const MILLIMETRES_PER_METRE As Double = 1000
 Private Const SEARCH_INITIAL_LIMIT As Double = 1E+30
+Private Const SECONDS_PER_DAY As Double = 86400
 Private Const MIN_PROJECTED_EXTENT_M As Double = 0.000001
 Private Const CIRCLE_CLOSURE_TOLERANCE_M As Double = 0.0000001
 Private Const FACE_NORMAL_ALIGNMENT_COSINE As Double = 0.999
@@ -469,6 +476,12 @@ Private Const DISPLAY_ARROW_HEIGHT As Long = 7
 Private Const DISPLAY_ARROW_STYLE As Long = 8
 Private Const PLANAR_OUTSIDE_ARROW_PENALTY_M As Double = 1
 Private Const PLANAR_ARROW_CLEARANCE_M As Double = 0.0003
+' Printed text of a non-centered native sample stays within two standard text heights of its requested point.
+Private Const PLANAR_SAMPLE_TEXT_REACH_M As Double = 0.007
+' Arrowheads meeting at one extension line touch; scale outlines before an overlap test.
+Private Const PLANAR_HEAD_OVERLAP_SHRINK As Double = 0.9
+' Text checks inflate printed text; separated candidate bounds farther apart than this cannot conflict.
+Private Const PLANAR_COMPATIBILITY_CLEARANCE_M As Double = 0.002
 
 ' Supported drawing scale factors
 Private Const SCALE_10_TO_1 As Double = 10#
@@ -580,6 +593,8 @@ Private Const MATRIX_ZY_INDEX As Long = 7
 Private Const MATRIX_ZZ_INDEX As Long = 8
 Private Const MATRIX_SCALE_INDEX As Long = 12
 Private Const MATRIX_LAST_INDEX As Long = 15
+Private Const PLANAR_RESUME_CANDIDATES_INDEX As Long = 0
+Private Const PLANAR_RESUME_NEXT_ROW_INDEX As Long = 1
 
 ' Math and geometric tolerances
 Private Const MIN_PROJECTED_UP_VECTOR_LENGTH As Double = 0.00001
@@ -743,8 +758,38 @@ Private Const LAYOUT_LABEL_SIDE_COUNT As Long = 4
 Private Const LAYOUT_NORMAL_RETRIES As Long = 2
 Private Const LAYOUT_LABEL_CANDIDATE_LIMIT As Long = 32
 Private Const PLANAR_PAGE_LOCAL_DIMENSION_LIMIT As Long = 8
-Private Const PLANAR_PAGE_UPPER_DETAIL_Y_RATIO As Double = 0.59
-Private Const PLANAR_PAGE_LOWER_DETAIL_Y_RATIO As Double = 0.32
+' Fewest measurements per detail that split requests may reach.
+Private Const PLANAR_DETAIL_MIN_GROUP_LIMIT As Long = 2
+' Most dimensions the overview of a fragment drawing keeps before it sheds short edges and holes.
+Private Const PLANAR_OVERVIEW_DIMENSION_LIMIT As Long = 10
+' Shortest edge, on paper at the overview scale, that fragment-sheet drawings still dimension on the overview.
+Private Const PLANAR_OVERVIEW_MIN_EDGE_M As Double = 0.012
+' Largest model span of local measurements along the overview within one dense-profile detail.
+Private Const PLANAR_DETAIL_MAX_SPAN_M As Double = 0.1
+' Detail letters: candidate directions around each circle and farthest distance beyond the circle.
+Private Const PLANAR_DETAIL_LABEL_DIRECTIONS As Long = 24
+Private Const PLANAR_DETAIL_LABEL_REACH_M As Double = 0.03
+' Split requests written by an attempt whose planar view had no crossing-free layout.
+Private Const PLANAR_SPLIT_FILENAME As String = "planar-split.tsv"
+' Height kept free above the title block for the thickness and quantity notes.
+Private Const PLANAR_OVERVIEW_NOTE_RESERVE_M As Double = 0.02
+' Width of the thickness and quantity notes in the lower-left corner of the first sheet.
+Private Const PLANAR_NOTE_BLOCK_WIDTH_M As Double = 0.07
+' Gap between an enlarged detail and its title above it, room for one dimension row.
+Private Const PLANAR_DETAIL_TITLE_OFFSET_M As Double = 0.012
+' Space kept on each side of an enlarged detail in a fragment-sheet cell for stacked dimensions.
+Private Const PLANAR_DETAIL_DIMENSION_BAND_M As Double = 0.01
+' A detail view outline exceeds its circle by up to this factor (observed 1.28).
+Private Const PLANAR_DETAIL_OUTLINE_ALLOWANCE As Double = 1.3
+' Fragment layout: overview height share of the first sheet, space above and below it for its dimensions,
+' and the largest detail outline on paper before its dimension band.
+Private Const PLANAR_PACK_OVERVIEW_HEIGHT_RATIO As Double = 0.3
+Private Const PLANAR_PACK_OVERVIEW_RESERVE_M As Double = 0.015
+Private Const PLANAR_DETAIL_MAX_PAPER_M As Double = 0.085
+' Share by which a detail outline may exceed its cell before the next attempt splits it.
+Private Const PLANAR_DETAIL_OVERFLOW_TOLERANCE As Double = 0.05
+' Smallest ratio between a detail and the view it is taken from; a long local edge may need the source scale.
+Private Const PLANAR_DETAIL_MIN_ENLARGEMENT As Double = 1
 Private Const LAYOUT_CONTINUATION_BOTTOM_M As Double = 0.065
 Private Const LAYOUT_TEXT_CLAMP_ATTEMPTS As Long = 2
 Private Const LAYOUT_TEXT_INK_MARGIN_M As Double = 0.0003
@@ -792,7 +837,6 @@ Private Const PLANAR_FIRST_Y_RATIO As Double = 0.82
 Private Const PLANAR_ROW_PITCH_RATIO As Double = 0.22
 Private Const PLANAR_WIDTH_RATIO As Double = 0.7
 Private Const PLANAR_HEIGHT_RATIO As Double = 0.11
-Private Const PLANAR_LOCAL_VIEW_COUNT As Long = 2
 Private Const PLANAR_DETAIL_SCALE As Double = 1
 Private Const PLANAR_DETAIL_LABELS As String = "А|Б|В|Г|Д|Е|Ж|З|И|К|Л|М|Н|П|Р|С|Т|У|Ф|Х|Ц|Ч|Ш|Щ|Ю|Я"
 Private Const PLANAR_LAYOUT_IMPROVEMENT_PASSES As Long = 3
@@ -821,6 +865,8 @@ Private Const SW_TEXT_FORMAT_DETAIL_VIEW_LABEL As Long = 43
 Private Const SW_TEXT_FORMAT_DETAIL_VIEW_SCALE As Long = 44
 Private Const SW_TEXT_FORMAT_DETAIL_VIEW_DELIMITER As Long = 45
 Private Const PLANAR_LAYOUT_SEARCH_LIMIT As Long = 20000
+' Search steps for the assignment without extension-line crossings before they are allowed.
+Private Const PLANAR_STRICT_SEARCH_LIMIT As Long = 600
 Private Const PLANAR_LAYOUT_AUDIT_FILENAME As String = "planar-layout-candidates.tsv"
 Private Const PLANAR_ARC_STEP_RAD As Double = 0.0349065850398866
 Private Const DISPLAY_ARC_CENTER_X As Long = 10
@@ -829,7 +875,6 @@ Private Const DISPLAY_ARC_NORMAL_Z As Long = 15
 Private Const DISPLAY_ARC_COUNTERCLOCKWISE As Long = 16
 Private Const PLANAR_OVERVIEW_INDEX As Long = 1
 Private Const PLANAR_LEFT_VIEW_INDEX As Long = 2
-Private Const PLANAR_RIGHT_VIEW_INDEX As Long = 3
 Private Const PLANAR_LOCAL_EDGE_RATIO As Double = 0.5
 Private Const PLANAR_ENDPOINT_PARAMETER_MARGIN As Double = 0.0001
 Private Const PLANAR_BASE_ROW_LIMIT As Long = 6

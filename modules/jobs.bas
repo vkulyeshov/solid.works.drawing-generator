@@ -21,6 +21,8 @@ Private Sub ProcessJob(ByVal j As Object)
     Set profilePageCrops = Nothing
     Set planarDimensionRequests = Nothing
     Set planarContourPoints = Nothing
+    Set planarDetailLabelBoxes = Nothing
+    planarSplitPending = False
     Set profileRawLoops = Nothing
     Set profileGeometryViews = Nothing
     Set profileDimensionRequests = Nothing

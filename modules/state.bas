@@ -5,6 +5,10 @@ Private planarLayoutMaterial As Object
 Private planarLayoutVisibleMaterial As Object
 Private planarLayoutOutlines As Object
 Private planarDetailLabels As Object
+Private planarDetailLabelBoxes As Object
+Private planarSplitOverview As Boolean, planarSplitPending As Boolean, planarSplitGroups As Object, planarSplitRequested As Object
+Private planarOverviewName As String, jobAttempt As Long
+Private planarModelCandidates As Boolean, planarModelDerived As Long
 Private planarLayoutRejections As Object
 Private planarTextMetricCache As Object
 Private checkpointPath As String, snapshotPath As String, sourcePath As String, sourceStamp As String, snapshotConfig As String
@@ -40,6 +44,9 @@ Private profilePanelOpenings As Collection
 Private semanticLayoutObstacles As Collection
 Private semanticLayoutGeometry As Object
 Private planarCandidateBudget As Long
+Private planarCandidateResume As Object
+Private planarStrictCrossings As Boolean, planarSearchLimit As Long
+Private planarSampleCount As Long, planarSampleSkips As Long
 Private planarDimensionRequests As Object
 Private planarContourPoints As Collection
 Private profileRawLoops As Collection

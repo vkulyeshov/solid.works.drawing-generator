@@ -170,6 +170,7 @@ Public Sub main()
         If JobEligible(job, retryBatch) Then
             jobNumber = CLng(job("number"))
             job("attempts") = CLng(job("attempts")) + 1
+            jobAttempt = CLng(job("attempts"))
             job("status") = STATE_RUNNING: job("stage") = "Opening model"
             SaveCheckpoint
             attempts = attempts + 1

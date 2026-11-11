@@ -30,6 +30,7 @@ public static class SixViewGenerationTest {
     const int InventoryTimeoutMilliseconds=900000;
     const int StartupTimeoutMilliseconds=120000, StartupPollMilliseconds=250;
     const int ShutdownGraceMilliseconds=5000;
+    const int KeepMacroLoaded=0;
     static Process ownedProcess;
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
     [DllImport("ole32.dll")] static extern int CreateBindCtx(int reserved,out IBindCtx context);
@@ -294,8 +295,9 @@ public static class SixViewGenerationTest {
             using(var watchdog=new System.Threading.Timer(delegate(object unused) {
                 try { if(ownedProcess!=null && !ownedProcess.HasExited) ownedProcess.Kill(); } catch(ArgumentException) { }
             },null,inventoryOnly ? InventoryTimeoutMilliseconds : macroTimeoutMilliseconds,System.Threading.Timeout.Infinite)) {
-                if(!sw.RunMacro(Path.Combine(work,"generator.swp"),"Macro11",inventoryOnly ? "InspectInventory" : "main"))
-                    throw new Exception("RunMacro returned false.");
+                int macroError=0;
+                if(!sw.RunMacro2(Path.Combine(work,"generator.swp"),"Macro11",inventoryOnly ? "InspectInventory" : "main",KeepMacroLoaded,out macroError))
+                    throw new Exception("RunMacro2 returned false; native macro error="+macroError);
             }
             string events=File.ReadAllText(Path.Combine(work,"progress.tsv"),System.Text.Encoding.Unicode);
             if(!events.Contains("\tCOMPLETE\t")) {

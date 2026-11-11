@@ -82,6 +82,12 @@ Private Function LayoutLabelScore(ByVal display As SldWorks.DisplayDimension, By
             If PlanarLinesHitText(lines, otherPolygons) Then
                 LayoutLabelScore = LayoutLabelScore + 1
             End If
+            ' Planar drawings use the joint solver's DSTU GOST 2.307 crossing rule.
+            If Not planarDimensionRequests Is Nothing Then
+                If PlanarBasesCrossLines(PlanarDimensionBases(display), cached("lines")) Or PlanarBasesCrossLines(cached("bases"), lines) Then
+                    LayoutLabelScore = LayoutLabelScore + 1
+                End If
+            End If
         End If
     Next key
 End Function
@@ -93,6 +99,7 @@ Private Sub LayoutCacheDimension(ByVal display As SldWorks.DisplayDimension)
     record.Add "bounds", LayoutInkBounds(LayoutInkPolygons(display))
     record.Add "text", LayoutInkPolygons(display)
     record.Add "lines", PlanarDisplayLines(data)
+    record.Add "bases", PlanarDimensionBases(display)
     For index = 0 To data.GetArrowHeadCount - 1
         triangle = PlanarArrowTriangle(data.GetArrowHeadAtIndex2(index))
         If Not IsEmpty(triangle) Then
@@ -357,7 +364,7 @@ Private Function LayoutTextSignature(ByVal display As SldWorks.DisplayDimension)
     LayoutTextSignature = Replace(Replace(Replace(LayoutTextSignature, " ", ""), vbCr, ""), vbLf, "")
 End Function
 
-Private Function TrySemanticLabelLayout(ByVal d As SldWorks.ModelDoc2, ByVal views As Collection, ByVal regions As Object, Optional ByVal prepare As Boolean = True) As Boolean
+Private Function TrySemanticLabelLayout(ByVal d As SldWorks.ModelDoc2, ByVal views As Collection, ByVal regions As Object, Optional ByVal prepare As Boolean = True, Optional ByVal passes As Long = LAYOUT_LABEL_PASSES) As Boolean
     Dim records As New Collection, owners As New Collection, materials As New Collection, item As Variant
     Dim view As SldWorks.View, display As SldWorks.DisplayDimension, format As SldWorks.TextFormat, direction As Variant
     Dim initial As New Collection, annotation As SldWorks.Annotation, data As SldWorks.DisplayData, a As Variant, b As Variant
@@ -449,8 +456,8 @@ Private Function TrySemanticLabelLayout(ByVal d As SldWorks.ModelDoc2, ByVal vie
     For Each item In records
         LayoutCacheDimension item
     Next item
-    For pass = 1 To LAYOUT_LABEL_PASSES
-        Log "SEMANTIC LABEL PASS " & pass & "/" & LAYOUT_LABEL_PASSES & "; dimensions=" & records.Count
+    For pass = 1 To passes
+        Log "SEMANTIC LABEL PASS " & pass & "/" & passes & "; dimensions=" & records.Count
         For index = 1 To records.Count
             Set display = records(index)
             Set view = owners(index)
@@ -467,7 +474,7 @@ Private Function TrySemanticLabelLayout(ByVal d As SldWorks.ModelDoc2, ByVal vie
         End If
     Next index
     TrySemanticLabelLayout = unresolved = 0
-    Log "SEMANTIC LABELS dimensions=" & records.Count & "; unresolved=" & unresolved & "; bounded passes=" & LAYOUT_LABEL_PASSES
+    Log "SEMANTIC LABELS dimensions=" & records.Count & "; unresolved=" & unresolved & "; bounded passes=" & passes
     If unresolved > 0 Then
         For index = 1 To records.Count
             Set display = records(index)

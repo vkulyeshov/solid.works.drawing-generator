@@ -332,7 +332,7 @@ Private Sub FinishNativeDimensionLayoutCore(ByVal d As SldWorks.ModelDoc2)
                 Loop
             Next item
             If Setting("DimensionPlanning", "roles") = "roles" Then
-                If TrySemanticLabelLayout(d, allViews, regions) Then
+                If TrySemanticLabelLayout(d, allViews, regions, True, PlanarSemanticPasses()) Then
                     Log "NATIVE LEADERS planar semantic text pass complete"
                     GoTo NextNativeLayoutSheet
                 End If
@@ -483,6 +483,9 @@ SemanticLabelsPlaced:
         Next item
 NextNativeLayoutSheet:
     Next sheetName
+    If planarSplitPending Then
+        Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Planar views without a crossing-free layout are split into fragment sheets on the next attempt."
+    End If
     If SixViewMode() And Not profileRoleDrawing Then
         RenderHolePatternCircles d
         AuditFinalSixViews d

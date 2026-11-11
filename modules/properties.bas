@@ -142,3 +142,11 @@ Private Function MinD(ByVal a As Double, ByVal b As Double) As Double
     End If
 End Function
 
+Private Function MaxD(ByVal a As Double, ByVal b As Double) As Double
+    If a > b Then
+        MaxD = a
+    Else
+        MaxD = b
+    End If
+End Function
+

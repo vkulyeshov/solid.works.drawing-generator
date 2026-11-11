@@ -251,22 +251,128 @@ Private Function PlanarClipPolygon(ByVal polygon As Variant, ByVal bounds As Var
     PlanarClipPolygon = result
 End Function
 
-Private Function PlanarCaptureCandidate(ByVal display As SldWorks.DisplayDimension, ByVal view As SldWorks.View, ByVal region As Variant, ByVal obstacles As Collection) As Object
-    Dim data As SldWorks.DisplayData, result As Object, lines As Collection, polygons As Collection, bases As New Collection
-    Dim bounds As Variant, textBounds As Variant, segment As Variant, obstacle As Variant, polygon As Variant, corner As Variant
-    Dim first As Variant, last As Variant, index As Long, rawPolygon As Variant, viewOutline As Variant
-    Dim arrow As Variant, triangle As Variant, edge As Long
+Private Function PlanarPointBoundaryDistance(ByVal point As Variant, ByVal polygon As Variant) As Double
+    Dim index As Long, a As Variant, b As Variant, dx As Double, dy As Double, lengthSquared As Double, t As Double, distance As Double
+    PlanarPointBoundaryDistance = SEARCH_INITIAL_LIMIT
+    For index = LBound(polygon) To UBound(polygon)
+        a = polygon(index)
+        b = polygon((index + 1) Mod (UBound(polygon) + 1))
+        dx = b(0) - a(0)
+        dy = b(1) - a(1)
+        lengthSquared = dx * dx + dy * dy
+        t = 0
+        If lengthSquared > 0 Then
+            t = ((point(0) - a(0)) * dx + (point(1) - a(1)) * dy) / lengthSquared
+            If t < 0 Then
+                t = 0
+            ElseIf t > 1 Then
+                t = 1
+            End If
+        End If
+        distance = Sqr((a(0) + t * dx - point(0)) ^ 2 + (a(1) + t * dy - point(1)) ^ 2)
+        If distance < PlanarPointBoundaryDistance Then
+            PlanarPointBoundaryDistance = distance
+        End If
+    Next index
+End Function
+
+' A native sample costs a placement and a full redraw. Skip it only when the
+' text placed at the requested point is certain to fail the same region or
+' material check in PlanarCaptureCandidate: every printed text box lies within
+' PLANAR_SAMPLE_TEXT_REACH_M of that point. Only non-centered text is placed
+' at the requested point, so callers must not use this for centered text.
+Private Function PlanarSampleCannotFit(ByVal view As SldWorks.View, ByVal region As Variant, ByVal x As Double, ByVal y As Double) As Boolean
+    Dim reach As Double, polygon As Variant, point As Variant
+    reach = DIMENSION_GEOMETRY_GAP_M + PLANAR_SAMPLE_TEXT_REACH_M
+    If x < region(OUTLINE_LEFT_INDEX) - reach Or y < region(OUTLINE_BOTTOM_INDEX) - reach Or x > region(OUTLINE_RIGHT_INDEX) + reach Or y > region(OUTLINE_TOP_INDEX) + reach Then
+        RejectPlanarCandidate "skipped: text point outside view region"
+        PlanarSampleCannotFit = True
+        Exit Function
+    End If
+    If Not planarLayoutVisibleMaterial.Exists(view.Name) Then
+        Exit Function
+    End If
+    polygon = planarLayoutVisibleMaterial(view.Name)
+    If IsEmpty(polygon) Then
+        Exit Function
+    End If
+    point = Array(x, y)
+    If ProfilePolygonLocation(point, polygon) = PROFILE_POINT_INSIDE Then
+        If PlanarPointBoundaryDistance(point, polygon) > PLANAR_SAMPLE_TEXT_REACH_M Then
+            RejectPlanarCandidate "skipped: text point inside material"
+            PlanarSampleCannotFit = True
+        End If
+    End If
+End Function
+
+' The bounded pass stops after complete rows. Its candidate list is kept so
+' that an expanded pass for the same view continues from the next row instead
+' of sampling the same native placements again.
+Private Sub RememberPlanarCandidates(ByVal displayName As String, ByVal candidates As Collection, ByVal nextRow As Long)
+    If planarCandidateResume Is Nothing Then
+        Exit Sub
+    End If
+    If planarCandidateResume.Exists(displayName) Then
+        planarCandidateResume.Remove displayName
+    End If
+    planarCandidateResume.Add displayName, Array(candidates, nextRow)
+End Sub
+
+' The joint planar solver checks printed text, crossings and arrowheads
+' together. The bounded semantic label passes are an optional pre-pass; with
+' zero passes, only labels that already satisfy every check are kept.
+Private Function PlanarSemanticPasses() As Long
+    If Setting("PlanarLabelPrepass", DEFAULT_PLANAR_LABEL_PREPASS) = "1" Then
+        PlanarSemanticPasses = LAYOUT_LABEL_PASSES
+    End If
+End Function
+
+' Dimension lines: the arrow-to-arrow segment of a linear dimension and the
+' sampled arc of an angular dimension.
+Private Function PlanarDimensionBases(ByVal display As SldWorks.DisplayDimension) As Collection
+    Dim data As SldWorks.DisplayData, lines As Collection, result As New Collection, first As Variant, last As Variant, index As Long
+    Dim segment As Variant, dx As Double, dy As Double, length As Double
     Set data = display.GetDisplayData
-    bounds = NativeDimensionBounds(display)
     Set lines = PlanarDisplayLines(data)
     If display.Type2 = SW_DIMENSION_LINEAR And data.GetArrowHeadCount = 2 Then
         first = data.GetArrowHeadAtIndex2(0)
         last = data.GetArrowHeadAtIndex2(1)
-        bases.Add Array(first(0), first(1), last(0), last(1))
+        result.Add Array(first(0), first(1), last(0), last(1))
+        ' Outside arrows extend the dimension line beyond the extension lines.
+        dx = last(0) - first(0)
+        dy = last(1) - first(1)
+        length = Sqr(dx * dx + dy * dy)
+        If length > PROFILE_MATERIAL_TOLERANCE_M Then
+            For index = 1 To data.GetLineCount
+                segment = lines(index)
+                If Abs((segment(0) - first(0)) * dy - (segment(1) - first(1)) * dx) <= PROFILE_MATERIAL_TOLERANCE_M * length And Abs((segment(2) - first(0)) * dy - (segment(3) - first(1)) * dx) <= PROFILE_MATERIAL_TOLERANCE_M * length Then
+                    result.Add segment
+                End If
+            Next index
+        End If
     End If
     For index = data.GetLineCount + 1 To lines.Count
-        bases.Add lines(index)
+        result.Add lines(index)
     Next index
+    Set PlanarDimensionBases = result
+End Function
+
+Private Function PlanarElapsedSeconds(ByVal started As Double) As Double
+    PlanarElapsedSeconds = Timer - started
+    If PlanarElapsedSeconds < 0 Then
+        PlanarElapsedSeconds = PlanarElapsedSeconds + SECONDS_PER_DAY
+    End If
+End Function
+
+Private Function PlanarCaptureCandidate(ByVal display As SldWorks.DisplayDimension, ByVal view As SldWorks.View, ByVal region As Variant, ByVal obstacles As Collection) As Object
+    Dim data As SldWorks.DisplayData, result As Object, lines As Collection, polygons As Collection, bases As New Collection
+    Dim bounds As Variant, textBounds As Variant, segment As Variant, obstacle As Variant, polygon As Variant, corner As Variant
+    Dim first As Variant, last As Variant, index As Long, rawPolygon As Variant, viewOutline As Variant
+    Dim arrow As Variant, triangle As Variant, edge As Long, heads As New Collection, printedText As Collection
+    Set data = display.GetDisplayData
+    bounds = NativeDimensionBounds(display)
+    Set lines = PlanarDisplayLines(data)
+    Set bases = PlanarDimensionBases(display)
     If data.GetArrowHeadCount = 2 And (display.Type2 = SW_DIMENSION_LINEAR Or display.Type2 = SW_DIMENSION_ANGULAR) Then
         first = data.GetArrowHeadAtIndex2(0)
         last = data.GetArrowHeadAtIndex2(1)
@@ -283,6 +389,7 @@ Private Function PlanarCaptureCandidate(ByVal display As SldWorks.DisplayDimensi
         If arrow(DISPLAY_ARROW_STYLE) = SW_ARROW_CLOSED Then
             triangle = PlanarArrowTriangle(arrow)
             If Not IsEmpty(triangle) Then
+                heads.Add triangle
                 For edge = 0 To 2
                     first = triangle(edge)
                     last = triangle((edge + 1) Mod 3)
@@ -305,14 +412,23 @@ Private Function PlanarCaptureCandidate(ByVal display As SldWorks.DisplayDimensi
         NativeExpandBounds bounds, segment(0), segment(1)
         NativeExpandBounds bounds, segment(2), segment(3)
     Next segment
+    ' Check the text as printed after reload: imported display data can keep a
+    ' smaller source font height while the layout is being sampled.
+    Set printedText = PlanarTextPolygons(display, data, 0, True)
+    textBounds = NativeTextBounds(data)
+    For Each polygon In printedText
+        For Each corner In polygon
+            NativeExpandBounds bounds, corner(0), corner(1)
+            NativeExpandBounds textBounds, corner(0), corner(1)
+        Next corner
+    Next polygon
     If Not NativeBoundsInside(bounds, region) Then
         RejectPlanarCandidate "outside view region"
         Exit Function
     End If
-    textBounds = NativeTextBounds(data)
     polygon = planarLayoutVisibleMaterial(view.Name)
     If Not IsEmpty(polygon) Then
-        Set polygons = PlanarTextPolygons(display, data, LEADER_GEOMETRY_CLEARANCE_M)
+        Set polygons = PlanarTextPolygons(display, data, LEADER_GEOMETRY_CLEARANCE_M, True)
         For Each corner In polygons
             If PlanarPolygonsOverlap(corner, polygon) Then
                 RejectPlanarCandidate "text touches material"
@@ -332,16 +448,17 @@ Private Function PlanarCaptureCandidate(ByVal display As SldWorks.DisplayDimensi
             End If
         Next segment
     Next obstacle
-    Set polygons = PlanarTextPolygons(display, data, -DIMENSION_GEOMETRY_GAP_M)
+    Set polygons = PlanarTextPolygons(display, data, -DIMENSION_GEOMETRY_GAP_M, True)
     If PlanarLinesHitText(lines, polygons) Then
         RejectPlanarCandidate "graphics cross own text"
         Exit Function
     End If
     Set result = CreateObject("Scripting.Dictionary")
     result.Add "position", display.GetAnnotation.GetPosition
-    result.Add "text", PlanarTextPolygons(display, data, LEADER_LABEL_CLEARANCE_M / 2)
+    result.Add "text", PlanarTextPolygons(display, data, LEADER_LABEL_CLEARANCE_M / 2, True)
     result.Add "lines", lines
     result.Add "bases", bases
+    result.Add "heads", heads
     result.Add "bounds", bounds
     result.Add "name", display.GetNameForSelection
     result.Add "offsetText", display.OffsetText
@@ -366,6 +483,13 @@ Private Sub AddPlanarLayoutCandidate(ByVal d As SldWorks.ModelDoc2, ByVal displa
     Dim data As SldWorks.DisplayData
     requestedCenter = display.CenterText
     requestedOffset = display.OffsetText
+    ' Non-centered text, including offset text, is placed at (x, y) for every arrow side.
+    If Not requestedCenter Then
+        If PlanarSampleCannotFit(view, region, x, y) Then
+            planarSampleSkips = planarSampleSkips + 1
+            Exit Sub
+        End If
+    End If
     firstSide = display.ArrowSide
     lastSide = firstSide
     Set data = display.GetDisplayData
@@ -407,6 +531,7 @@ Private Sub CapturePlanarLayoutVariant(ByVal d As SldWorks.ModelDoc2, ByVal disp
     Set annotation = display.GetAnnotation
     requestedCenter = display.CenterText
     requestedOffset = display.OffsetText
+    planarSampleCount = planarSampleCount + 1
     AsDrawing(d).ActivateView ""
     annotation.SetPosition2 x, y, 0
     ' Moving native text can turn centering off; apply the requested text mode last.
@@ -443,15 +568,178 @@ Private Sub CapturePlanarLayoutVariant(ByVal d As SldWorks.ModelDoc2, ByVal disp
                 End If
             End If
         Next existing
-        For index = 1 To candidates.Count
-            If CDbl(candidate("cost")) < CDbl(candidates(index)("cost")) Then
-                candidates.Add candidate, , index
-                Exit Sub
-            End If
-        Next index
-        candidates.Add candidate
+        PlanarInsertCandidate candidates, candidate
     End If
 End Sub
+
+Private Sub PlanarInsertCandidate(ByVal candidates As Collection, ByVal candidate As Object)
+    Dim index As Long
+    For index = 1 To candidates.Count
+        If CDbl(candidate("cost")) < CDbl(candidates(index)("cost")) Then
+            candidates.Add candidate, , index
+            Exit Sub
+        End If
+    Next index
+    candidates.Add candidate
+End Sub
+
+Private Function PlanarShiftPoint(ByVal point As Variant, ByVal x As Double, ByVal y As Double) As Variant
+    If UBound(point) >= 2 Then
+        PlanarShiftPoint = Array(point(0) + x, point(1) + y, point(2))
+    Else
+        PlanarShiftPoint = Array(point(0) + x, point(1) + y)
+    End If
+End Function
+
+' A linear dimension moved along its normal keeps its shape: every graphic moves by the same
+' offset except the extension-line feet, which stay at the measured points.
+Private Function PlanarTranslateCandidate(ByVal template As Object, ByVal first As Variant, ByVal last As Variant, ByVal ux As Double, ByVal uy As Double, ByVal nx As Double, ByVal ny As Double, ByVal delta As Double) As Object
+    Dim result As Object, key As Variant, item As Variant, shifted As Collection, polygon As Variant, moved() As Variant, index As Long
+    Dim x As Double, y As Double, bounds As Variant, segment As Variant, startX As Double, startY As Double, endX As Double, endY As Double
+    x = nx * delta
+    y = ny * delta
+    Set result = CreateObject("Scripting.Dictionary")
+    For Each key In template.Keys
+        Select Case CStr(key)
+            Case "text", "heads"
+                Set shifted = New Collection
+                For Each polygon In template(key)
+                    ReDim moved(UBound(polygon))
+                    For index = 0 To UBound(polygon)
+                        moved(index) = PlanarShiftPoint(polygon(index), x, y)
+                    Next index
+                    shifted.Add moved
+                Next polygon
+                result.Add key, shifted
+            Case "bases"
+                Set shifted = New Collection
+                For Each segment In template(key)
+                    shifted.Add Array(segment(0) + x, segment(1) + y, segment(2) + x, segment(3) + y)
+                Next segment
+                result.Add key, shifted
+            Case "lines"
+                Set shifted = New Collection
+                For Each segment In template(key)
+                    startX = segment(0)
+                    startY = segment(1)
+                    endX = segment(2)
+                    endY = segment(3)
+                    If Not PlanarExtensionFoot(startX, startY, first, last, ux, uy, nx, ny) Then
+                        startX = startX + x
+                        startY = startY + y
+                    End If
+                    If Not PlanarExtensionFoot(endX, endY, first, last, ux, uy, nx, ny) Then
+                        endX = endX + x
+                        endY = endY + y
+                    End If
+                    shifted.Add Array(startX, startY, endX, endY)
+                Next segment
+                result.Add key, shifted
+            Case "position", "controlPoint", "baseControlPoint"
+                result.Add key, PlanarShiftPoint(template(key), x, y)
+            Case "bounds", "cost"
+            Case Else
+                result.Add key, template(key)
+        End Select
+    Next key
+    bounds = Array(SEARCH_INITIAL_LIMIT, SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT)
+    For Each segment In result("lines")
+        NativeExpandBounds bounds, segment(0), segment(1)
+        NativeExpandBounds bounds, segment(2), segment(3)
+    Next segment
+    For Each polygon In result("text")
+        For Each item In polygon
+            NativeExpandBounds bounds, item(0), item(1)
+        Next item
+    Next polygon
+    result.Add "bounds", bounds
+    result.Add "cost", CDbl(template("cost")) - PlanarGraphicLength(template("lines")) + PlanarGraphicLength(result("lines"))
+    Set PlanarTranslateCandidate = result
+End Function
+
+' An extension line starts at a measured point, possibly after a small gap along the normal.
+Private Function PlanarExtensionFoot(ByVal x As Double, ByVal y As Double, ByVal first As Variant, ByVal last As Variant, ByVal ux As Double, ByVal uy As Double, ByVal nx As Double, ByVal ny As Double) As Boolean
+    Dim point As Variant
+    For Each point In Array(first, last)
+        If Abs((x - point(0)) * ux + (y - point(1)) * uy) <= PLANAR_MODEL_ALONG_TOLERANCE_M And Abs((x - point(0)) * nx + (y - point(1)) * ny) <= PLANAR_MODEL_FOOT_TOLERANCE_M Then
+            PlanarExtensionFoot = True
+            Exit Function
+        End If
+    Next point
+End Function
+
+' The checks of PlanarCaptureCandidate on modelled geometry. Text keeps the material clearance
+' by growing the stored text boxes from their stored margin to the capture margin.
+Private Function PlanarModelCandidateValid(ByVal candidate As Object, ByVal view As SldWorks.View, ByVal region As Variant, ByVal obstacles As Collection) As Boolean
+    Dim segment As Variant, polygon As Variant, material As Variant, obstacle As Variant, textBounds As Variant, corner As Variant
+    Dim rawPolygon As Variant, viewOutline As Variant
+    rawPolygon = planarLayoutMaterial(view.Name)
+    viewOutline = planarLayoutOutlines(view.Name)
+    For Each segment In candidate("bases")
+        If NativeLeaderCrossesBox(segment(0), segment(1), segment(2), segment(3), viewOutline) Then
+            If ProfileLineCutsMaterial(Array(segment(0), segment(1)), Array(segment(2), segment(3)), Array(rawPolygon)) Then
+                Exit Function
+            End If
+        End If
+    Next segment
+    If Not NativeBoundsInside(candidate("bounds"), region) Then
+        Exit Function
+    End If
+    material = planarLayoutVisibleMaterial(view.Name)
+    textBounds = Array(SEARCH_INITIAL_LIMIT, SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT)
+    For Each polygon In candidate("text")
+        If Not IsEmpty(material) Then
+            If PlanarPolygonsOverlap(PlanarGrowRectangle(polygon, LEADER_GEOMETRY_CLEARANCE_M - LEADER_LABEL_CLEARANCE_M / 2), material) Then
+                Exit Function
+            End If
+        End If
+        For Each corner In polygon
+            NativeExpandBounds textBounds, corner(0), corner(1)
+        Next corner
+    Next polygon
+    For Each obstacle In obstacles
+        If NativeBoxesOverlap(textBounds, obstacle, LEADER_LABEL_CLEARANCE_M) Then
+            Exit Function
+        End If
+        For Each segment In candidate("lines")
+            If NativeLeaderCrossesBox(segment(0), segment(1), segment(2), segment(3), obstacle) Then
+                Exit Function
+            End If
+        Next segment
+    Next obstacle
+    PlanarModelCandidateValid = True
+End Function
+
+Private Function PlanarGrowRectangle(ByVal polygon As Variant, ByVal amount As Double) As Variant
+    Dim ax As Double, ay As Double, bx As Double, by As Double, length As Double, result(3) As Variant, p As Variant
+    Dim p0 As Variant, p1 As Variant, p3 As Variant
+    p0 = polygon(0)
+    p1 = polygon(1)
+    p3 = polygon(3)
+    ax = p1(0) - p0(0)
+    ay = p1(1) - p0(1)
+    length = Sqr(ax * ax + ay * ay)
+    If length > 0 Then
+        ax = ax / length
+        ay = ay / length
+    End If
+    bx = p3(0) - p0(0)
+    by = p3(1) - p0(1)
+    length = Sqr(bx * bx + by * by)
+    If length > 0 Then
+        bx = bx / length
+        by = by / length
+    End If
+    p = polygon(0)
+    result(0) = Array(p(0) - (ax + bx) * amount, p(1) - (ay + by) * amount)
+    p = polygon(1)
+    result(1) = Array(p(0) + (ax - bx) * amount, p(1) + (ay - by) * amount)
+    p = polygon(2)
+    result(2) = Array(p(0) + (ax + bx) * amount, p(1) + (ay + by) * amount)
+    p = polygon(3)
+    result(3) = Array(p(0) + (bx - ax) * amount, p(1) + (by - ay) * amount)
+    PlanarGrowRectangle = result
+End Function
 
 Private Sub RestorePlanarAngularSector(ByVal d As SldWorks.ModelDoc2, ByVal display As SldWorks.DisplayDimension, ByVal candidate As Object)
     Dim data As SldWorks.DisplayData, arc As Variant, first As Variant, last As Variant, angle As Double, changed As Boolean, attempt As Long
@@ -534,9 +822,27 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
     Dim basePosition As Variant, annotation As SldWorks.Annotation, offsetSide As Long
     Dim data As SldWorks.DisplayData, arc As Variant
     Dim opposite As Long, oppositeLimit As Long, changed As Boolean, oppositeChanged As Boolean, centered As Long, centeredLimit As Long, directionLimit As Long, bisector As Double
+    Dim displayName As String, firstRow As Long, nextRow As Long, stored As Variant, sampleX As Double, sampleY As Double
+    Dim templates As Collection, target As Collection, template As Variant, derived As Object, templateRows(1) As Long
     value = display.GetDimension2(SW_DIMENSION_INDEX_FIRST).SystemValue
+    displayName = display.GetNameForSelection
+    nextRow = PLANAR_LAYOUT_ROWS + 1
+    ' An expanded pass continues the rows of the bounded pass for this view.
+    If Not planarCandidateResume Is Nothing Then
+        If planarCandidateResume.Exists(displayName) Then
+            stored = planarCandidateResume(displayName)
+            Set result = stored(PLANAR_RESUME_CANDIDATES_INDEX)
+            firstRow = stored(PLANAR_RESUME_NEXT_ROW_INDEX)
+            If firstRow > PLANAR_LAYOUT_ROWS Then
+                Set PlanarDimensionCandidates = result
+                Exit Function
+            End If
+        End If
+    End If
     If display.Type2 = SW_DIMENSION_ANGULAR Then
-        Set PlanarDimensionCandidates = PlanarAngularCandidates(d, display, view, region, obstacles)
+        Set result = PlanarAngularCandidates(d, display, view, region, obstacles)
+        RememberPlanarCandidates displayName, result, nextRow
+        Set PlanarDimensionCandidates = result
         Exit Function
     End If
     display.OffsetText = False
@@ -575,15 +881,46 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
                 cy = arc(DISPLAY_ARC_CENTER_Y)
             End If
         Else
-            For row = 0 To PLANAR_LAYOUT_ROWS
+            ' The model places only the first row natively. Farther rows translate those
+            ' templates along the normal and stretch their extension lines.
+            Set templates = New Collection
+            templates.Add New Collection
+            templates.Add New Collection
+            templateRows(0) = -1
+            templateRows(1) = -1
+            For row = firstRow To PLANAR_LAYOUT_ROWS
                 For side = 0 To 1
                     distance = (GOST_OBJECT_OFFSET_M + row * PLANAR_LAYOUT_RADIAL_PITCH_M) * (1 - 2 * side)
+                    Set target = result
+                    If planarModelCandidates Then
+                        ' A side samples natively until one row yields templates; farther rows are modelled.
+                        If templateRows(side) >= 0 Then
+                            For Each template In templates(side + 1)
+                                Set derived = PlanarTranslateCandidate(template, first, last, dx, dy, nx, ny, (row - templateRows(side)) * PLANAR_LAYOUT_RADIAL_PITCH_M * (1 - 2 * side))
+                                If PlanarModelCandidateValid(derived, view, region, obstacles) Then
+                                    PlanarInsertCandidate result, derived
+                                    planarModelDerived = planarModelDerived + 1
+                                End If
+                            Next template
+                            GoTo NextPlanarCandidateSide
+                        End If
+                        ' An edge dimension line that the capture would reject for cutting the material is not sampled.
+                        If request("kind") = "edge" Then
+                            If NativeLeaderCrossesBox(first(0) + nx * distance, first(1) + ny * distance, last(0) + nx * distance, last(1) + ny * distance, planarLayoutOutlines(view.Name)) Then
+                                If ProfileLineCutsMaterial(Array(first(0) + nx * distance, first(1) + ny * distance), Array(last(0) + nx * distance, last(1) + ny * distance), Array(planarLayoutMaterial(view.Name))) Then
+                                    planarSampleSkips = planarSampleSkips + 1
+                                    GoTo NextPlanarCandidateSide
+                                End If
+                            End If
+                        End If
+                        Set target = templates(side + 1)
+                    End If
                     For along = -1 To 1
                         shift = along * (length / 2 + width + GOST_ARROW_LENGTH_M)
                         If request("kind") = "hole-location" Then
                             shift = along * width
                         End If
-                        AddPlanarLayoutCandidate d, display, view, region, obstacles, result, cx + nx * distance + dx * shift, cy + ny * distance + dy * shift, value
+                        AddPlanarLayoutCandidate d, display, view, region, obstacles, target, cx + nx * distance + dx * shift, cy + ny * distance + dy * shift, value
                         If request("kind") = "hole-location" Then
                             bounds = view.GetOutline
                             If CLng(request("axis")) = SCREEN_X_AXIS_INDEX Then
@@ -596,34 +933,50 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
                         End If
                     Next along
                     If request("kind") = "edge" Then
+                        ' Each offset variant below places this base itself before sampling.
                         Set annotation = display.GetAnnotation
-                        display.OffsetText = False
-                        display.CenterText = True
-                        annotation.SetPosition2 cx + nx * distance, cy + ny * distance, 0
-                        d.GraphicsRedraw2
                         basePosition = Array(cx + nx * distance, cy + ny * distance, 0)
                         For along = -1 To 1
                             For offsetSide = 0 To 1
-                                display.OffsetText = False
-                                display.CenterText = True
-                                annotation.SetPosition2 basePosition(0), basePosition(1), basePosition(2)
-                                d.GraphicsRedraw2
-                                display.OffsetText = True
-                                display.CenterText = False
-                                display.SetBrokenLeader2 False, SW_BROKEN_LEADER_HORIZONTAL_TEXT
                                 shift = along * (length / 2 + width + GOST_ARROW_LENGTH_M)
-                                AddPlanarLayoutCandidate d, display, view, region, obstacles, result, cx + nx * (distance + (1 - 2 * offsetSide) * COORDINATE_LANE_PITCH_M) + dx * shift, cy + ny * (distance + (1 - 2 * offsetSide) * COORDINATE_LANE_PITCH_M) + dy * shift, value, basePosition
+                                sampleX = cx + nx * (distance + (1 - 2 * offsetSide) * COORDINATE_LANE_PITCH_M) + dx * shift
+                                sampleY = cy + ny * (distance + (1 - 2 * offsetSide) * COORDINATE_LANE_PITCH_M) + dy * shift
+                                ' Offset text is non-centered and placed at the sample point; skip the base placement too.
+                                If PlanarSampleCannotFit(view, region, sampleX, sampleY) Then
+                                    planarSampleSkips = planarSampleSkips + 1
+                                Else
+                                    display.OffsetText = False
+                                    display.CenterText = True
+                                    annotation.SetPosition2 basePosition(0), basePosition(1), basePosition(2)
+                                    d.GraphicsRedraw2
+                                    display.OffsetText = True
+                                    display.CenterText = False
+                                    display.SetBrokenLeader2 False, SW_BROKEN_LEADER_HORIZONTAL_TEXT
+                                    AddPlanarLayoutCandidate d, display, view, region, obstacles, target, sampleX, sampleY, value, basePosition
+                                End If
                             Next offsetSide
                         Next along
                         display.OffsetText = False
                         display.CenterText = False
                         display.SetBrokenLeader2 False, SW_SOLID_LEADER_ALIGNED_TEXT
                     End If
+NextPlanarCandidateSide:
                 Next side
-                If planarCandidateBudget > 0 And result.Count >= planarCandidateBudget Then
+                If planarModelCandidates Then
+                    For side = 0 To 1
+                        If templateRows(side) < 0 And templates(side + 1).Count > 0 Then
+                            templateRows(side) = row
+                            For Each template In templates(side + 1)
+                                PlanarInsertCandidate result, template
+                            Next template
+                        End If
+                    Next side
+                ElseIf planarCandidateBudget > 0 And result.Count >= planarCandidateBudget Then
+                    nextRow = row + 1
                     GoTo PlanarCandidatesReady
                 End If
             Next row
+            RememberPlanarCandidates displayName, result, nextRow
             Set PlanarDimensionCandidates = result
             Exit Function
         End If
@@ -660,7 +1013,8 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
                 bisector = PlanarAngle(arc(DISPLAY_LINE_START_X) + arc(DISPLAY_LINE_END_X) - 2 * cx, arc(DISPLAY_LINE_START_Y) + arc(DISPLAY_LINE_END_Y) - 2 * cy)
                 directionLimit = 0
             End If
-            For row = 0 To PLANAR_LAYOUT_ROWS
+            ' Rows resume only for a single opposite/centered pass; see PlanarCandidatesReady.
+            For row = firstRow To PLANAR_LAYOUT_ROWS
                 distance = GOST_OBJECT_OFFSET_M + row * PLANAR_LAYOUT_RADIAL_PITCH_M
                 For direction = 0 To directionLimit
                     angle = direction * 2 * PI / PLANAR_LAYOUT_DIRECTIONS
@@ -670,6 +1024,7 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
                     AddPlanarLayoutCandidate d, display, view, region, obstacles, result, cx + distance * Cos(angle), cy + distance * Sin(angle), expected:=value, oppositeAngle:=(opposite > 0)
                 Next direction
                 If planarCandidateBudget > 0 And result.Count >= planarCandidateBudget Then
+                    nextRow = row + 1
                     GoTo PlanarCandidatesReady
                 End If
             Next row
@@ -682,11 +1037,21 @@ PlanarCandidatesReady:
         changed = display.VerticallyOppositeAngle
         d.GraphicsRedraw2
     End If
+    ' A row index alone cannot resume nested opposite/centered passes.
+    If oppositeLimit = 0 And centeredLimit = 0 Then
+        RememberPlanarCandidates displayName, result, nextRow
+    End If
     Set PlanarDimensionCandidates = result
 End Function
 
 Private Function PlanarCandidatesCompatible(ByVal first As Object, ByVal last As Object) As Boolean
     Dim a As Variant, b As Variant, firstText As Collection, lastText As Collection, bases As Collection, lines As Collection
+    ' Bounds contain every line, arrowhead and printed text box; separated
+    ' bounds cannot produce any of the conflicts below.
+    If Not NativeBoxesOverlap(first("bounds"), last("bounds"), PLANAR_COMPATIBILITY_CLEARANCE_M) Then
+        PlanarCandidatesCompatible = True
+        Exit Function
+    End If
     Set firstText = first("text")
     Set lastText = last("text")
     For Each a In firstText
@@ -717,7 +1082,57 @@ Private Function PlanarCandidatesCompatible(ByVal first As Object, ByVal last As
             End If
         Next b
     Next a
+    ' DSTU GOST 2.307: a dimension line must not cross the extension, leader or
+    ' dimension lines of another dimension.
+    If planarStrictCrossings Then
+        If PlanarBasesCrossLines(first("bases"), last("lines")) Or PlanarBasesCrossLines(last("bases"), first("lines")) Then
+            Exit Function
+        End If
+    End If
+    If PlanarHeadsOverlap(first("heads"), last("heads")) Then
+        Exit Function
+    End If
     PlanarCandidatesCompatible = True
+End Function
+
+Private Function PlanarBasesCrossLines(ByVal bases As Collection, ByVal lines As Collection) As Boolean
+    Dim a As Variant, b As Variant
+    For Each a In bases
+        For Each b In lines
+            If PlanarSegmentsCross(Array(a(0), a(1)), Array(a(2), a(3)), Array(b(0), b(1)), Array(b(2), b(3))) Then
+                PlanarBasesCrossLines = True
+                Exit Function
+            End If
+        Next b
+    Next a
+End Function
+
+' Arrowheads that only touch at a shared extension line are allowed; shrink
+' both outlines toward their centroids before testing a real overlap.
+Private Function PlanarHeadsOverlap(ByVal firstHeads As Collection, ByVal lastHeads As Collection) As Boolean
+    Dim a As Variant, b As Variant
+    For Each a In firstHeads
+        For Each b In lastHeads
+            If PlanarPolygonsOverlap(PlanarShrinkTriangle(a), PlanarShrinkTriangle(b)) Then
+                PlanarHeadsOverlap = True
+                Exit Function
+            End If
+        Next b
+    Next a
+End Function
+
+Private Function PlanarShrinkTriangle(ByVal triangle As Variant) As Variant
+    Dim cx As Double, cy As Double, index As Long, result(2) As Variant, p As Variant
+    For index = 0 To 2
+        p = triangle(index)
+        cx = cx + p(0) / 3
+        cy = cy + p(1) / 3
+    Next index
+    For index = 0 To 2
+        p = triangle(index)
+        result(index) = Array(cx + (p(0) - cx) * PLANAR_HEAD_OVERLAP_SHRINK, cy + (p(1) - cy) * PLANAR_HEAD_OVERLAP_SHRINK)
+    Next index
+    PlanarShrinkTriangle = result
 End Function
 
 Private Function PlanarDimensionLineConflict(ByVal a As Variant, ByVal b As Variant) As Boolean
@@ -760,7 +1175,7 @@ Private Function SolvePlanarCandidates(ByVal remaining As Collection, ByVal chos
     Dim record As Object, candidate As Object, existing As Object, available As Collection, options As Collection
     Dim best As Object, bestOptions As Collection, nextRemaining As Collection, compatible As Boolean
     steps = steps + 1
-    If steps > PLANAR_LAYOUT_SEARCH_LIMIT Then
+    If steps > planarSearchLimit Then
         Exit Function
     End If
     If remaining.Count = 0 Then
@@ -850,6 +1265,7 @@ End Sub
 Private Sub ReservePlanarViewNotes(ByVal d As SldWorks.ModelDoc2, ByVal view As SldWorks.View, ByVal region As Variant, ByVal obstacles As Collection)
     Dim notes As Variant, item As Variant, note As SldWorks.Note, annotation As SldWorks.Annotation
     Dim format As SldWorks.TextFormat, index As Long, extent As Variant, position As Variant
+    Dim labelX As Double, labelTop As Double, outline As Variant
     notes = view.GetNotes
     If IsEmpty(notes) Then
         Exit Sub
@@ -873,7 +1289,17 @@ Private Sub ReservePlanarViewNotes(ByVal d As SldWorks.ModelDoc2, ByVal view As 
         extent = note.GetExtent
         If Not IsEmpty(extent) Then
             position = annotation.GetPosition
-            annotation.SetPosition2 position(0) + region(0) + LEADER_LABEL_CLEARANCE_M - extent(BBOX_X_MIN_INDEX), position(1) + region(3) - LEADER_LABEL_CLEARANCE_M - extent(BBOX_Y_MAX_INDEX), position(2)
+            ' A detail label stands over its own image, clear of the first dimension row; other notes keep the region corner.
+            labelX = region(0) + LEADER_LABEL_CLEARANCE_M
+            labelTop = region(3) - LEADER_LABEL_CLEARANCE_M
+            If Not planarDetailLabels Is Nothing Then
+                If planarDetailLabels.Exists(view.Name) Then
+                    outline = view.GetOutline
+                    labelX = MaxD(labelX, outline(OUTLINE_LEFT_INDEX))
+                    labelTop = MinD(labelTop, outline(OUTLINE_TOP_INDEX) + PLANAR_DETAIL_TITLE_OFFSET_M + extent(BBOX_Y_MAX_INDEX) - extent(BBOX_Y_MIN_INDEX))
+                End If
+            End If
+            annotation.SetPosition2 position(0) + labelX - extent(BBOX_X_MIN_INDEX), position(1) + labelTop - extent(BBOX_Y_MAX_INDEX), position(2)
             d.GraphicsRedraw2
             extent = note.GetExtent
             obstacles.Add Array(extent(BBOX_X_MIN_INDEX), extent(BBOX_Y_MIN_INDEX), extent(BBOX_X_MAX_INDEX), extent(BBOX_Y_MAX_INDEX))
@@ -886,7 +1312,7 @@ Private Sub FinishPlanarDimensionLayout(ByVal d As SldWorks.ModelDoc2, ByVal vie
     Dim record As Object, candidate As Object, candidates As Collection, region As Variant, position As Variant, steps As Long, count As Long
     Dim displays As Object, initialValues As Object, item As Variant, other As Object, rebuilt As Collection
     Dim audit As Object, number As Long, polygon As Variant, corner As Variant, line As Variant, rawPolygon() As Variant, index As Long, rejection As Variant
-    Dim actualAngle As Double, initialAngle As Double
+    Dim actualAngle As Double, initialAngle As Double, started As Double, viewStarted As Double, labelBox As Variant
     Set displays = CreateObject("Scripting.Dictionary")
     Set initialValues = CreateObject("Scripting.Dictionary")
     Set planarLayoutMaterial = CreateObject("Scripting.Dictionary")
@@ -918,6 +1344,10 @@ Private Sub FinishPlanarDimensionLayout(ByVal d As SldWorks.ModelDoc2, ByVal vie
         planarLayoutOutlines.Add view.Name, view.GetOutline
         planarLayoutVisibleMaterial.Add view.Name, PlanarClipPolygon(rawPolygon, view.GetOutline)
         planarCandidateBudget = PLANAR_LAYOUT_CANDIDATE_LIMIT
+        Set planarCandidateResume = CreateObject("Scripting.Dictionary")
+        planarModelCandidates = Setting("PlanarModelCandidates", DEFAULT_PLANAR_MODEL_CANDIDATES) = "1"
+        planarModelDerived = 0
+        viewStarted = Timer
 BuildPlanarViewCandidates:
         Set records = New Collection
         Set chosen = New Collection
@@ -925,19 +1355,30 @@ BuildPlanarViewCandidates:
         obstacles.Add Array(work(0), sheetHeight - LEADER_STAMP_TOP_MARGIN_M, LEADER_STAMP_WIDTH_M, sheetHeight)
         region = regions(view.Name)
         ReservePlanarViewNotes d, view, region, obstacles
+        If Not planarDetailLabelBoxes Is Nothing Then
+            If planarDetailLabelBoxes.Exists(view.Name) Then
+                For Each labelBox In planarDetailLabelBoxes(view.Name)
+                    obstacles.Add labelBox
+                Next labelBox
+            End If
+        End If
         Set display = view.GetFirstDisplayDimension5
         Do While Not display Is Nothing
             Set planarLayoutRejections = CreateObject("Scripting.Dictionary")
             If Not initialValues.Exists(display.GetNameForSelection) Then
                 initialValues.Add display.GetNameForSelection, display.GetDimension2(SW_DIMENSION_INDEX_FIRST).SystemValue
             End If
+            planarSampleCount = 0
+            planarSampleSkips = 0
+            started = Timer
             Set candidates = PlanarDimensionCandidates(d, display, view, region, obstacles)
             number = 0
             For Each candidate In candidates
                 number = number + 1
-                candidate.Add "id", display.GetNameForSelection & "|" & CStr(number)
+                ' A resumed list already has IDs; renumber it for this solve.
+                candidate("id") = display.GetNameForSelection & "|" & CStr(number)
             Next candidate
-            Log "PLANAR CANDIDATES " & display.GetNameForSelection & "; count=" & candidates.Count
+            Log "PLANAR CANDIDATES " & display.GetNameForSelection & "; count=" & candidates.Count & "; native samples=" & planarSampleCount & "; skipped points=" & planarSampleSkips & "; seconds=" & Format$(PlanarElapsedSeconds(started), "0.0")
             If candidates.Count = 0 Or Setting("DimensionLayoutAudit", "0") = "1" Then
                 For Each rejection In planarLayoutRejections.Keys
                     Log "PLANAR REJECT " & display.GetNameForSelection & "; " & rejection & "=" & planarLayoutRejections(rejection)
@@ -964,6 +1405,10 @@ BuildPlanarViewCandidates:
                 audit.Close
             End If
             If candidates.Count = 0 Then
+                If planarModelCandidates Then
+                    GoTo PlanarModelMismatch
+                End If
+                RequestPlanarSplit view.Name
                 Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "No valid native planar placement: " & display.GetNameForSelection
             End If
             Set record = CreateObject("Scripting.Dictionary")
@@ -976,14 +1421,28 @@ BuildPlanarViewCandidates:
             Set display = display.GetNext5
         Loop
         steps = 0
+        planarStrictCrossings = True
+        planarSearchLimit = PLANAR_STRICT_SEARCH_LIMIT
         Set planarLayoutCompatibility = CreateObject("Scripting.Dictionary")
         If Not SolvePlanarCandidates(records, chosen, steps) Then
             If planarCandidateBudget > 0 Then
-                Log "PLANAR bounded candidate pass needs more alternatives; expanding this view only: " & view.Name
+                Log "PLANAR bounded candidate pass needs more alternatives; expanding this view only from the next unsampled rows: " & view.Name
                 planarCandidateBudget = 0
                 GoTo BuildPlanarViewCandidates
             End If
-            Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "No non-overlapping planar dimension assignment: " & view.Name & "; search=" & steps
+            ' DSTU GOST 2.307 asks to avoid these crossings. When no assignment
+            ' avoids them, allow a dimension line to cross another dimension's
+            ' extension line; every text, arrowhead and baseline check remains.
+            Log "PLANAR no assignment avoids extension-line crossings; search=" & steps & "; allowing them in this view only: " & view.Name
+            RequestPlanarSplit view.Name
+            Set chosen = New Collection
+            steps = 0
+            planarStrictCrossings = False
+            planarSearchLimit = PLANAR_LAYOUT_SEARCH_LIMIT
+            Set planarLayoutCompatibility = CreateObject("Scripting.Dictionary")
+            If Not SolvePlanarCandidates(records, chosen, steps) Then
+                Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "No non-overlapping planar dimension assignment: " & view.Name & "; search=" & steps
+            End If
         End If
         ImprovePlanarAssignment records, chosen
         Set rebuilt = New Collection
@@ -1034,10 +1493,16 @@ BuildPlanarViewCandidates:
             If record Is Nothing Then
                 Log "PLANAR EXPECTED BOUNDS " & Join(candidate("bounds"), ",") & "; actual=" & Join(NativeDimensionBounds(display), ",")
                 Log "PLANAR CONTROL " & PlanarAuditCoordinates(candidate("controlPoint")) & "; expected position=" & PlanarAuditCoordinates(candidate("position")) & "; actual position=" & PlanarAuditCoordinates(display.GetAnnotation.GetPosition)
+                If planarModelCandidates Then
+                    GoTo PlanarModelMismatch
+                End If
                 Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "The restored native placement differs from its candidate: " & candidate("name") & "; " & Join(planarLayoutRejections.Keys, ", ")
             End If
             For Each other In rebuilt
                 If Not PlanarCandidatesCompatible(record, other) Then
+                    If planarModelCandidates Then
+                        GoTo PlanarModelMismatch
+                    End If
                     Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "The restored native dimensions overlap."
                 End If
             Next other
@@ -1046,7 +1511,17 @@ BuildPlanarViewCandidates:
             ValidateNativeViewIsolation display, view.Name, views
             count = count + 1
         Next candidate
-        Log "PLANAR ASSIGNMENT " & view.Name & "; dimensions=" & chosen.Count & "; search=" & steps
+        Log "PLANAR ASSIGNMENT " & view.Name & "; dimensions=" & chosen.Count & "; search=" & steps & "; modelled candidates=" & planarModelDerived & "; native check=" & planarModelCandidates & "; seconds=" & Format$(PlanarElapsedSeconds(viewStarted), "0.0")
+        GoTo NextPlanarLayoutView
+PlanarModelMismatch:
+        ' SolidWorks did not draw a modelled placement as predicted: sample this view natively.
+        Log "PLANAR MODEL mismatch in " & view.Name & "; sampling this view natively"
+        planarModelCandidates = False
+        planarCandidateBudget = PLANAR_LAYOUT_CANDIDATE_LIMIT
+        Set planarCandidateResume = CreateObject("Scripting.Dictionary")
+        GoTo BuildPlanarViewCandidates
+NextPlanarLayoutView:
     Next item
+    Set planarCandidateResume = Nothing
     Log "NATIVE LEADERS dimensions=" & count & "; complete planar graphics and text checked together"
 End Sub
