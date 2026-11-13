@@ -75,6 +75,7 @@ python -B tests/test_inventory_suppression.py
 python -B tests/test_inventory_saved.py
 python -B tests/test_source_validation.py
 python -B tests/test_dimension_layout.py
+python -B tests/test_memory_layout.py
 python -B tests/test_profile_pages.py
 python -B tests/test_compact_profiles.py
 python -B tests/test_panel_text_bounds.py
@@ -83,6 +84,18 @@ python -B tests/test_panel_text_bounds.py
 These check source/native consistency, output paths, repository hygiene, package contents, VBS entry points and arguments, build failures, checkpoint recovery, backup cleanup, snapshot targets including linked STEP files, and both suppression-filter modes with CLI/INI precedence, descendant inventory and active-instance quantities. WSH tests require Windows. Launcher contract tests use a disposable package with a private sentinel lock and never start CAD. Run controller recovery tests when no generator holds the shared lock.
 
 The dimension-layout tests execute the VBA marker, spacing, row-placement, and local-datum graph routines under WSH. They check that overflow fails instead of losing dimensions. An optional external `dimension_layout/geometry.json` fixture, captured by `InspectDimensionLayout.ps1 -IncludeGeometry`, runs a capacity audit against native projected vertices and writes an external `geometry-capacity.json` report. A reported capacity limitation is not a successful drawing-layout verification.
+
+`test_memory_layout.py` executes the canonical frame, table-anchor, witness-foot,
+free-text and Ukrainian reference-letter calculations under WSH. It also checks
+that candidate generation and search contain no CAD positioning or redraw calls.
+Native fixtures can be prepared with `prepare_model_test.py` and executed with
+`RunMemoryLayoutSuite.ps1 -WorkDirectory EXTERNAL_DIRECTORY -CaseFilter CASES`.
+The suite starts a dedicated SolidWorks process for each case. Case names refer
+to prepared external fixture directories; comma-separated filters select cases.
+Successful native runs must verify actual graphics before exporting a PDF.
+Run `python -B tests/test_memory_layout_native.py EXTERNAL_CASE_DIRECTORY` to
+compare the reopened drawing's measurements with the verified layout, check
+frame visibility on every sheet and match source letters with PDF captions.
 
 ### SolidWorks integration tests
 

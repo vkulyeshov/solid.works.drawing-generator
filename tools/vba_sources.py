@@ -19,11 +19,13 @@ PROCEDURE = re.compile(r'^(?:Private |Public )?(?:Sub|Function) (\w+)\(', re.MUL
 
 
 def validate_variable_names(text):
-    """Keep the reserved Scale identifier out of generator declarations."""
+    """Reject known reserved declaration names before opening native VBA."""
     for line_number, line in enumerate(text.splitlines(), 1):
         code = re.sub(r'"(?:[^"]|"")*"', '""', line).split("'", 1)[0]
         if re.search(r'(?:\b(?:Dim|Static|ByVal|ByRef|Private|Public|Const)|,)\s+Scale\b', code, re.I):
             raise ValueError(f'Use viewScaleValue instead of the Scale identifier at line {line_number}')
+        if re.search(r'(?:\b(?:Dim|Static|ByVal|ByRef|Private|Public|Const)|,)\s+Option\b', code, re.I):
+            raise ValueError(f'VBA reserved variable name: Option at line {line_number}')
 
 
 def validate_sub_expressions(text):

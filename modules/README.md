@@ -42,6 +42,11 @@ Every BAS file must be listed exactly once, with a matching `VB_Name` header and
 | `planar_drawing.bas` | Native aligned lengths, inclined angles, shared hole sizes and single-view ownership |
 | `planar_routing.bas` | Outward dimension bases and crossing-aware placement for inclined planar edges |
 | `planar_layout.bas` | Joint native candidate placement, rotated text and arc geometry, backtracking and compactness improvement |
+| `sheet_workspace.bas` | Actual frame geometry, connected occupied format blocks and sheet/view notes |
+| `memory_geometry.bas` | Offline linear, angular and leader geometry, fixed witness feet and collision predicates |
+| `memory_layout.bas` | Shared in-memory assignment, batched native application and bounded graphic verification |
+| `detail_references.bas` | Matching Ukrainian letters on profile source areas and enlarged-view captions |
+| `reference_layout.bas` | Joint placement of source-area letters and dimensions without fixed-letter witness conflicts |
 | `planar_text.bas` | Cached Windows font measurements for native dimension text and safe GDI resource cleanup |
 | `open_bore_slots.bas` | Open circular keyways, exposed-geometry dimension references, and directed label placement |
 | `dimensions.bas` | Overall and diameter dimensions, validation, GOST styling |

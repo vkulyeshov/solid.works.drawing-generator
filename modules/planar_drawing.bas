@@ -210,31 +210,24 @@ Failed:
     Err.Raise errorNumber, "AddPlanarAngleDimension", "Angle of group " & group("id") & " in " & view.Name & "; " & stage & ": " & errorText
 End Sub
 
-Private Function MakePlanarEndDetail(ByVal d As SldWorks.ModelDoc2, ByVal overview As SldWorks.View, ByVal plan As Collection, ByVal groupOwners As Object, ByVal owner As Long, ByVal cellWidth As Double, ByVal cellHeight As Double, ByVal band As Double, ByVal createX As Double, ByVal createY As Double, ByVal circles As Collection) As SldWorks.View
+Private Function MakePlanarEndDetail(ByVal d As SldWorks.ModelDoc2, ByVal overview As SldWorks.View, ByVal plan As Collection, ByVal groupOwners As Object, ByVal owner As Long, ByVal cellWidth As Double, ByVal cellHeight As Double, ByVal band As Double, ByVal createX As Double, ByVal createY As Double, ByVal circles As Collection, ByVal plannedScale As Double) As SldWorks.View
     Dim group As Object, a As Object, b As Object, anchor As Object, bounds As Variant, index As Long
     Dim p As Variant, x As Double, y As Double, radius As Double, profile As SldWorks.SketchSegment, view As SldWorks.View
     Dim selection As SldWorks.SelectData, parent As SldWorks.View
     Dim manager As SldWorks.SelectionMgr
     Dim stage As String, errorNumber As Long, errorText As String
     Dim detailScale As Double, outline As Variant, fitRatio As Double
-    Dim label As String, labels As Variant, origin As Variant, minimumScale As Double
+    Dim label As String, labels As Variant, origin As Variant, minimumScale As Double, reserve As Double
     On Error GoTo Failed
-    bounds = PlanarOwnerBounds(plan, groupOwners, owner)
-    For Each group In plan
-        If groupOwners.Exists(CStr(group("id"))) Then
-            If CLng(groupOwners(CStr(group("id")))) = owner Then
-                Set anchor = group("first")
-            End If
-        End If
-    Next group
-    If anchor Is Nothing Then
-        Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "A planar end detail has no local features."
+    p = PlanarOwnerCircle(overview, plan, groupOwners, owner)
+    x = p(0)
+    y = p(1)
+    radius = p(2)
+    ' Packed details arrive with the scale their cell was planned for.
+    detailScale = plannedScale
+    If detailScale <= 0 Then
+        detailScale = PlanarDetailScale(radius, MinD(cellWidth, cellHeight) - 2 * band)
     End If
-    p = PatternSheetPoint(overview, anchor("point"))
-    x = p(0) + ((bounds(0) + bounds(2)) / 2 - anchor("x")) * overview.ScaleDecimal
-    y = p(1) + ((bounds(1) + bounds(3)) / 2 - anchor("y")) * overview.ScaleDecimal
-    radius = DetailProfileRadius(bounds)
-    detailScale = PlanarDetailScale(radius, MinD(cellWidth, cellHeight) - 2 * band)
     ' A detail stays enlarged; one that then overflows its cell asks the next attempt for smaller fragments.
     minimumScale = StandardScale(overview.ScaleDecimal * PLANAR_DETAIL_MIN_ENLARGEMENT)
     detailScale = MaxD(detailScale, minimumScale)
@@ -252,7 +245,7 @@ Private Function MakePlanarEndDetail(ByVal d As SldWorks.ModelDoc2, ByVal overvi
     profile.Select4 False, selection
     stage = "detail view creation"
     labels = Split(PLANAR_DETAIL_LABELS, "|")
-    label = labels(owner - PLANAR_LEFT_VIEW_INDEX)
+    label = DetailReferenceLabel(owner - PLANAR_LEFT_VIEW_INDEX + 1)
     ' The circle is stored relative to its view origin because the view may still be recentered.
     origin = overview.Position
     circles.Add Array(overview, AsDrawing(d).GetCurrentSheet.GetName, label, x - origin(0), y - origin(1), radius * overview.ScaleDecimal)
@@ -274,8 +267,11 @@ Private Function MakePlanarEndDetail(ByVal d As SldWorks.ModelDoc2, ByVal overvi
     ' Changing a detail's scale after creation shifts its crop away from the measured features,
     ' so a detail that still overflows its cell asks the next attempt for smaller fragments.
     outline = view.GetOutline
-    fitRatio = MinD((cellHeight - 2 * band) / (outline(OUTLINE_TOP_INDEX) - outline(OUTLINE_BOTTOM_INDEX)), (cellWidth - 2 * band) / (outline(OUTLINE_RIGHT_INDEX) - outline(OUTLINE_LEFT_INDEX)))
-    If fitRatio < 1 - PLANAR_DETAIL_OVERFLOW_TOLERANCE Then
+    reserve = 2 * band
+    fitRatio = MinD((cellHeight - reserve) / (outline(OUTLINE_TOP_INDEX) - outline(OUTLINE_BOTTOM_INDEX)), (cellWidth - reserve) / (outline(OUTLINE_RIGHT_INDEX) - outline(OUTLINE_LEFT_INDEX)))
+    Log "PLANAR DETAIL CELL " & label & "; cell=" & cellWidth & "x" & cellHeight & "; outline=" & (outline(OUTLINE_RIGHT_INDEX) - outline(OUTLINE_LEFT_INDEX)) & "x" & (outline(OUTLINE_TOP_INDEX) - outline(OUTLINE_BOTTOM_INDEX)) & "; fit=" & fitRatio
+    ' Packed details are placed again from their real outlines, so only a fixed cell can overflow.
+    If plannedScale <= 0 And fitRatio < 1 - PLANAR_DETAIL_OVERFLOW_TOLERANCE Then
         Log "PLANAR DETAIL OVERFLOW " & view.Name & "; ratio=" & fitRatio
         RequestPlanarSplit "detail " & label, PlanarOwnerGroupIds(groupOwners, owner)
     End If
@@ -312,6 +308,85 @@ Private Function PlanarOwnerGroupIds(ByVal groupOwners As Object, ByVal owner As
     PlanarOwnerGroupIds = result
 End Function
 
+' Detail circle of an owner: centre on the sheet of the given view and radius in model units.
+Private Function PlanarOwnerCircle(ByVal overview As SldWorks.View, ByVal plan As Collection, ByVal groupOwners As Object, ByVal owner As Long) As Variant
+    Dim group As Object, anchor As Object, bounds As Variant, p As Variant
+    bounds = PlanarOwnerBounds(plan, groupOwners, owner)
+    For Each group In plan
+        If groupOwners.Exists(CStr(group("id"))) Then
+            If CLng(groupOwners(CStr(group("id")))) = owner Then
+                Set anchor = group("first")
+            End If
+        End If
+    Next group
+    If anchor Is Nothing Then
+        Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "A planar end detail has no local features."
+    End If
+    p = PatternSheetPoint(overview, anchor("point"))
+    PlanarOwnerCircle = Array(p(0) + ((bounds(0) + bounds(2)) / 2 - anchor("x")) * overview.ScaleDecimal, p(1) + ((bounds(1) + bounds(3)) / 2 - anchor("y")) * overview.ScaleDecimal, DetailProfileRadius(bounds))
+End Function
+
+' Width and height, on the sheet of the given view, of the outer contour that a detail circle shows.
+' A circle that cuts no contour edge keeps its own diameter.
+Private Function PlanarCircleContourSize(ByVal view As SldWorks.View, ByVal x As Double, ByVal y As Double, ByVal radius As Double) As Variant
+    Dim index As Long, p As Variant, q As Variant, bounds As Variant, dx As Double, dy As Double, fx As Double, fy As Double
+    Dim a As Double, b As Double, c As Double, root As Double, first As Double, last As Double
+    Dim side As Long, px As Double, py As Double, inside As Boolean
+    bounds = Array(SEARCH_INITIAL_LIMIT, SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT)
+    ' The circle itself bounds the shown material wherever its extreme points lie inside the contour.
+    For side = 0 To 3
+        px = x
+        py = y
+        If side = 0 Then
+            px = x + radius
+        ElseIf side = 1 Then
+            px = x - radius
+        ElseIf side = 2 Then
+            py = y + radius
+        Else
+            py = y - radius
+        End If
+        inside = False
+        For index = 1 To planarContourPoints.Count
+            p = PatternSheetPoint(view, planarContourPoints(index))
+            q = PatternSheetPoint(view, planarContourPoints(index Mod planarContourPoints.Count + 1))
+            If (p(1) > py) <> (q(1) > py) Then
+                If px < p(0) + (q(0) - p(0)) * (py - p(1)) / (q(1) - p(1)) Then
+                    inside = Not inside
+                End If
+            End If
+        Next index
+        If inside Then
+            NativeExpandBounds bounds, px, py
+        End If
+    Next side
+    For index = 1 To planarContourPoints.Count
+        p = PatternSheetPoint(view, planarContourPoints(index))
+        q = PatternSheetPoint(view, planarContourPoints(index Mod planarContourPoints.Count + 1))
+        dx = q(0) - p(0)
+        dy = q(1) - p(1)
+        fx = p(0) - x
+        fy = p(1) - y
+        a = dx * dx + dy * dy
+        b = 2 * (fx * dx + fy * dy)
+        c = fx * fx + fy * fy - radius * radius
+        If a > 0 And b * b - 4 * a * c >= 0 Then
+            root = Sqr(b * b - 4 * a * c)
+            first = MaxD(0, (-b - root) / (2 * a))
+            last = MinD(1, (-b + root) / (2 * a))
+            If first <= last Then
+                NativeExpandBounds bounds, p(0) + dx * first, p(1) + dy * first
+                NativeExpandBounds bounds, p(0) + dx * last, p(1) + dy * last
+            End If
+        End If
+    Next index
+    If bounds(2) < bounds(0) Then
+        PlanarCircleContourSize = Array(2 * radius, 2 * radius)
+    Else
+        PlanarCircleContourSize = Array(MinD(2 * radius, bounds(2) - bounds(0)), MinD(2 * radius, bounds(3) - bounds(1)))
+    End If
+End Function
+
 Private Function PlanarOwnerBounds(ByVal plan As Collection, ByVal groupOwners As Object, ByVal owner As Long) As Variant
     Dim group As Object, a As Object, b As Object, bounds As Variant
     bounds = Array(SEARCH_INITIAL_LIMIT, SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT, -SEARCH_INITIAL_LIMIT)
@@ -333,28 +408,62 @@ Private Function PlanarDetailScale(ByVal radius As Double, ByVal paper As Double
     PlanarDetailScale = MinD(PLANAR_DETAIL_SCALE, StandardScale(paper / ((2 * radius + PLANAR_DETAIL_BOUNDARY_MARGIN_M) * PLANAR_DETAIL_OUTLINE_ALLOWANCE)))
 End Function
 
-' Largest detail first, each at the highest and then leftmost free spot of a sheet: candidate corners are
+' Packs the real outlines of created details, each on the sheet it was created on, with the given
+' dimension bands; Nothing when a sheet cannot hold its details in any tried order.
+Private Function PlanarRepack(ByVal ownerViews As Object, ByVal fixedPages As Object, ByVal firstTop As Double, ByVal sideBand As Double, ByVal heightBand As Double) As Object
+    Dim widths As Object, heights As Object, key As Variant, view As SldWorks.View, outline As Variant, trial As Object, packMode As Long
+    Set widths = CreateObject("Scripting.Dictionary")
+    Set heights = CreateObject("Scripting.Dictionary")
+    For Each key In fixedPages.Keys
+        Set view = ownerViews(key)
+        outline = view.GetOutline
+        widths.Add key, outline(OUTLINE_RIGHT_INDEX) - outline(OUTLINE_LEFT_INDEX) + 2 * sideBand
+        heights.Add key, outline(OUTLINE_TOP_INDEX) - outline(OUTLINE_BOTTOM_INDEX) + 2 * heightBand
+    Next key
+    Rnd -1
+    Randomize PLANAR_PACK_SHUFFLE_SEED
+    For packMode = PLANAR_PACK_BY_HEIGHT To PLANAR_PACK_REPACK_ORDERS
+        Set trial = CreateObject("Scripting.Dictionary")
+        If PackPlanarDetails(widths, heights, firstTop, trial, packMode, fixedPages) >= 0 Then
+            Set PlanarRepack = trial
+            Exit Function
+        End If
+    Next packMode
+End Function
+
+' Details in the requested order, each at the highest and then leftmost free spot of a sheet: candidate corners are
 ' the area corner and the corners of placed cells. Page 0 is the area under the overview on the first
 ' sheet, where the thickness notes keep the lower-left corner.
-Private Function PackPlanarDetails(ByVal sizes As Object, ByVal firstTop As Double, ByVal placements As Object) As Long
+Private Function PackPlanarDetails(ByVal widths As Object, ByVal heights As Object, ByVal firstTop As Double, ByVal placements As Object, Optional ByVal orderMode As Long = 0, Optional ByVal fixedPages As Object = Nothing) As Long
     Dim keys As Variant, order() As String, count As Long, index As Long, other As Long, swapKey As String
     Dim cells As Collection, cell As Variant, xs As Collection, ys As Collection, x As Variant, y As Variant
-    Dim left As Double, right As Double, top As Double, bottom As Double, size As Double, page As Long, lastPage As Long
+    Dim left As Double, right As Double, top As Double, bottom As Double, width As Double, height As Double, page As Long, lastPage As Long
     Dim bestX As Double, bestY As Double, found As Boolean, box As Variant, free As Boolean
+    Dim ranks As Object, firstPage As Long, finalPage As Long
     left = LEADER_WORK_LEFT_M
     right = sheetWidth - LEADER_WORK_EDGE_MARGIN_M
-    keys = sizes.Keys
-    count = sizes.Count
+    keys = heights.Keys
+    count = heights.Count
     If count = 0 Then
         Exit Function
     End If
     ReDim order(count - 1)
+    Set ranks = CreateObject("Scripting.Dictionary")
     For index = 0 To count - 1
         order(index) = keys(index)
+        If orderMode > PLANAR_PACK_BY_AREA Then
+            ranks.Add order(index), CDbl(Rnd)
+        ElseIf orderMode = PLANAR_PACK_BY_WIDTH Then
+            ranks.Add order(index), CDbl(widths(order(index)))
+        ElseIf orderMode = PLANAR_PACK_BY_AREA Then
+            ranks.Add order(index), CDbl(widths(order(index))) * CDbl(heights(order(index)))
+        Else
+            ranks.Add order(index), CDbl(heights(order(index)))
+        End If
     Next index
     For index = 1 To count - 1
         For other = index To 1 Step -1
-            If sizes(order(other)) > sizes(order(other - 1)) Then
+            If ranks(order(other)) > ranks(order(other - 1)) Then
                 swapKey = order(other)
                 order(other) = order(other - 1)
                 order(other - 1) = swapKey
@@ -364,9 +473,16 @@ Private Function PackPlanarDetails(ByVal sizes As Object, ByVal firstTop As Doub
     Set cells = New Collection
     cells.Add Array(0, left, LEADER_WORK_BOTTOM_M, left + PLANAR_NOTE_BLOCK_WIDTH_M, LEADER_WORK_BOTTOM_M + PLANAR_OVERVIEW_NOTE_RESERVE_M)
     For index = 0 To count - 1
-        size = sizes(order(index))
+        width = widths(order(index))
+        height = heights(order(index))
         found = False
-        For page = 0 To lastPage + 1
+        firstPage = 0
+        finalPage = lastPage + 1
+        If Not fixedPages Is Nothing Then
+            firstPage = CLng(fixedPages(order(index)))
+            finalPage = firstPage
+        End If
+        For page = firstPage To finalPage
             top = firstTop
             bottom = LEADER_WORK_BOTTOM_M
             If page > 0 Then
@@ -385,7 +501,7 @@ Private Function PackPlanarDetails(ByVal sizes As Object, ByVal firstTop As Doub
             Next cell
             For Each y In ys
                 For Each x In xs
-                    box = Array(x, y - size, x + size, y)
+                    box = Array(x, y - height, x + width, y)
                     free = box(0) >= left - PROFILE_MATERIAL_TOLERANCE_M And box(2) <= right And box(1) >= bottom And box(3) <= top + PROFILE_MATERIAL_TOLERANCE_M
                     If free Then
                         For Each cell In cells
@@ -410,11 +526,21 @@ Private Function PackPlanarDetails(ByVal sizes As Object, ByVal firstTop As Doub
                 Exit For
             End If
         Next page
+        If Not found Then
+            If Not fixedPages Is Nothing Then
+                PackPlanarDetails = -1
+                Exit Function
+            End If
+            ' A cell larger than a sheet still gets a sheet of its own.
+            page = lastPage + 1
+            bestX = left
+            bestY = PlanarDetailCellTop()
+        End If
         If page > lastPage Then
             lastPage = page
         End If
-        cells.Add Array(page, bestX, bestY - size, bestX + size, bestY)
-        placements.Add order(index), Array(page, bestX + size / 2, bestY - size / 2)
+        cells.Add Array(page, bestX, bestY - height, bestX + width, bestY)
+        placements.Add order(index), Array(page, bestX + width / 2, bestY - height / 2)
     Next index
     PackPlanarDetails = lastPage
 End Function
@@ -814,7 +940,7 @@ Private Function AssignPlanarDetailOwners(ByVal plan As Collection, ByVal longes
             used = 0
             firstOwner = owner + 1
             For index = 0 To count - 1
-                If used = 0 Or keys(index) - clusterStart > PLANAR_DETAIL_MAX_SPAN_M Then
+                If used = 0 Or used >= PLANAR_DETAIL_FIRST_GROUP_LIMIT Or keys(index) - clusterStart > PLANAR_DETAIL_MAX_SPAN_M Then
                     owner = owner + 1
                     used = 0
                     clusterStart = keys(index)
@@ -916,6 +1042,8 @@ Private Function MakePlanarFeatureDrawing(ByRef d As SldWorks.ModelDoc2, ByVal d
     Dim circles As New Collection, holeView As SldWorks.View, overviewY As Double, detailBand As Double, overviewEdgeScale As Double
     Dim placements As Object, pageSheets As Object, pageSources As Object, sizes As Object, placement As Variant, lastPage As Long
     Dim packTop As Double, cellWidth As Double, createX As Double, radius As Double, detailScale As Double
+    Dim cellHeights As Object, detailScales As Object, ownerCircle As Variant, clipSize As Variant
+    Dim circleCell As Double, packMode As Long, packPages As Long, trial As Object, fixedPages As Object, repackBand As Double, repacked As Boolean, repackHeightBand As Double, bands As Variant
     Set face = PlanarFeatureFace(body)
     If face Is Nothing Then
         Exit Function
@@ -1073,17 +1201,35 @@ Private Function MakePlanarFeatureDrawing(ByRef d As SldWorks.ModelDoc2, ByVal d
     pageSheets.Add CStr(0), firstSheet
     pageSources.Add CStr(0), first
     If spread Then
-        ' Each detail gets a square cell of its enlarged circle plus a dimension band on every side.
+        ' Each detail gets a cell of the contour its circle actually shows, enlarged, plus a dimension band on every side.
         detailBand = PLANAR_DETAIL_DIMENSION_BAND_M
         Set sizes = CreateObject("Scripting.Dictionary")
+        Set cellHeights = CreateObject("Scripting.Dictionary")
+        Set detailScales = CreateObject("Scripting.Dictionary")
         For owner = PLANAR_LEFT_VIEW_INDEX To lastOwner
             If PlanarOwnerHasFeatures(groupOwners, owner) Then
-                radius = DetailProfileRadius(PlanarOwnerBounds(plan, groupOwners, owner))
+                ownerCircle = PlanarOwnerCircle(first, plan, groupOwners, owner)
+                radius = ownerCircle(2)
                 detailScale = MaxD(PlanarDetailScale(radius, PLANAR_DETAIL_MAX_PAPER_M), StandardScale(first.ScaleDecimal * PLANAR_DETAIL_MIN_ENLARGEMENT))
-                sizes.Add CStr(owner), (2 * radius + PLANAR_DETAIL_BOUNDARY_MARGIN_M) * PLANAR_DETAIL_OUTLINE_ALLOWANCE * detailScale + 2 * detailBand
+                clipSize = PlanarCircleContourSize(first, ownerCircle(0), ownerCircle(1), radius * first.ScaleDecimal)
+                circleCell = (2 * radius + PLANAR_DETAIL_BOUNDARY_MARGIN_M) * PLANAR_DETAIL_OUTLINE_ALLOWANCE * detailScale
+                sizes.Add CStr(owner), MinD(circleCell, clipSize(0) / first.ScaleDecimal * detailScale + PLANAR_DETAIL_OUTLINE_PAD_M) + 2 * detailBand
+                cellHeights.Add CStr(owner), MinD(circleCell, clipSize(1) / first.ScaleDecimal * detailScale + PLANAR_DETAIL_OUTLINE_PAD_M) + 2 * detailBand
+                detailScales.Add CStr(owner), detailScale
             End If
         Next owner
-        lastPage = PackPlanarDetails(sizes, packTop, placements)
+        ' The packing order that needs the fewest sheets wins.
+        lastPage = -1
+        Rnd -1
+        Randomize PLANAR_PACK_SHUFFLE_SEED
+        For packMode = PLANAR_PACK_BY_HEIGHT To PLANAR_PACK_PLAN_ORDERS
+            Set trial = CreateObject("Scripting.Dictionary")
+            packPages = PackPlanarDetails(sizes, cellHeights, packTop, trial, packMode)
+            If lastPage < 0 Or packPages < lastPage Then
+                lastPage = packPages
+                Set placements = trial
+            End If
+        Next packMode
         For detailPage = 1 To lastPage
             ' Each continuation sheet has its own reference view for the detail circles.
             If detailPage = 1 Then
@@ -1108,6 +1254,7 @@ Private Function MakePlanarFeatureDrawing(ByRef d As SldWorks.ModelDoc2, ByVal d
         If Not PlanarOwnerHasFeatures(groupOwners, owner) Then
             GoTo NextPlanarDetailOwner
         End If
+        detailScale = 0
         createX = sheetWidth * PLANAR_CENTER_X_RATIO
         createY = sheetHeight * (PLANAR_FIRST_Y_RATIO - (owner - 1) * PLANAR_ROW_PITCH_RATIO)
         detailPage = 0
@@ -1117,18 +1264,78 @@ Private Function MakePlanarFeatureDrawing(ByRef d As SldWorks.ModelDoc2, ByVal d
             createX = placement(1)
             createY = placement(2)
             cellWidth = sizes(CStr(owner))
-            cellHeight = cellWidth
+            cellHeight = cellHeights(CStr(owner))
+            detailScale = detailScales(CStr(owner))
         End If
         detailSheet = pageSheets(CStr(detailPage))
         Set endSource = pageSources(CStr(detailPage))
         AsDrawing(d).ActivateSheet detailSheet
-        Set view = MakePlanarEndDetail(d, endSource, plan, groupOwners, owner, cellWidth, cellHeight, detailBand, createX, createY, circles)
+        Set view = MakePlanarEndDetail(d, endSource, plan, groupOwners, owner, cellWidth, cellHeight, detailBand, createX, createY, circles, detailScale)
         views.Add view
         ownerViews.Add CStr(owner), view
         ownerSheets.Add CStr(owner), detailSheet
 NextPlanarDetailOwner:
     Next owner
     d.ForceRebuild3 False
+    If spread Then
+        ' The created views report their real outlines; each sheet is packed again with them.
+        Set fixedPages = CreateObject("Scripting.Dictionary")
+        For owner = PLANAR_LEFT_VIEW_INDEX To lastOwner
+            If ownerViews.Exists(CStr(owner)) Then
+                placement = placements(CStr(owner))
+                fixedPages.Add CStr(owner), placement(0)
+            End If
+        Next owner
+        ' The widest band every sheet can afford comes first; then each direction takes what is left.
+        bands = Split(PLANAR_REPACK_BANDS_M, "|")
+        For index = LBound(bands) To UBound(bands)
+            Set trial = PlanarRepack(ownerViews, fixedPages, packTop, Val(bands(index)), Val(bands(index)))
+            If Not trial Is Nothing Then
+                Set placements = trial
+                repacked = True
+                repackBand = Val(bands(index))
+                repackHeightBand = repackBand
+                Exit For
+            End If
+        Next index
+        If repacked Then
+            For index = LBound(bands) To UBound(bands)
+                If Val(bands(index)) > repackBand Then
+                    Set trial = PlanarRepack(ownerViews, fixedPages, packTop, Val(bands(index)), repackHeightBand)
+                    If Not trial Is Nothing Then
+                        Set placements = trial
+                        repackBand = Val(bands(index))
+                        Exit For
+                    End If
+                End If
+            Next index
+            For index = LBound(bands) To UBound(bands)
+                If Val(bands(index)) > repackHeightBand Then
+                    Set trial = PlanarRepack(ownerViews, fixedPages, packTop, repackBand, Val(bands(index)))
+                    If Not trial Is Nothing Then
+                        Set placements = trial
+                        repackHeightBand = Val(bands(index))
+                        Exit For
+                    End If
+                End If
+            Next index
+        End If
+        Log "PLANAR DETAIL REPACK fitted=" & repacked & "; side band=" & repackBand & "; top band=" & repackHeightBand
+        If Not repacked Then
+            ' The largest detail of a sheet that cannot hold its details is divided on the next attempt.
+            circleCell = 0
+            For owner = PLANAR_LEFT_VIEW_INDEX To lastOwner
+                If ownerViews.Exists(CStr(owner)) Then
+                    If sizes(CStr(owner)) * cellHeights(CStr(owner)) > circleCell Then
+                        circleCell = sizes(CStr(owner)) * cellHeights(CStr(owner))
+                        index = owner
+                    End If
+                End If
+            Next owner
+            Set view = ownerViews(CStr(index))
+            RequestPlanarSplit "detail " & planarDetailLabels(view.Name), PlanarOwnerGroupIds(groupOwners, index)
+        End If
+    End If
     AsDrawing(d).ActivateSheet firstSheet
     CenterView first, sheetWidth * PLANAR_CENTER_X_RATIO, overviewY
     For index = PLANAR_LEFT_VIEW_INDEX To lastOwner

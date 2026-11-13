@@ -644,6 +644,13 @@ End Function
 
 Private Sub FinishProfilePages(ByVal d As SldWorks.ModelDoc2)
     Dim number As Long, message As String, group As Variant, cell As Variant
+    If MemoryLayoutEnabled() Then
+        AddProfileDetailReferences d
+        FinishMemoryDimensionLayout d
+        AuditProfilePages d
+        AsDrawing(d).ActivateSheet profilePageFirstSheet
+        Exit Sub
+    End If
     If profileFamilyMode Then
         FinishFamilyProfilePages d
         Exit Sub
@@ -693,6 +700,10 @@ Private Sub FinishPagedDimensionLayout(ByVal d As SldWorks.ModelDoc2, Optional B
     Dim name As Variant, item As Variant, other As Variant, labelItem As Variant, sheetViews As Collection, records As Collection, bases As Collection
     Dim view As SldWorks.View, display As SldWorks.DisplayDimension, request As Object, region As Variant, cellRegion As Variant, box As Variant, bounds As Variant
     Dim labels As Collection, a As Variant, b As Variant, side As Long, lane As Long, kind As String
+    If MemoryLayoutEnabled() Then
+        ' The joint pass runs once after every view and its source marker exist.
+        Exit Sub
+    End If
     For Each name In AsDrawing(d).GetSheetNames
         AsDrawing(d).ActivateSheet CStr(name)
         AsDrawing(d).ActivateView ""

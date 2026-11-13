@@ -10,6 +10,7 @@ Private Function RenderSettingsSignature() As String
     Dim key As Variant
     RenderSettingsSignature = RENDER_SIGNATURE_PREFIX & paperFormat & "|Template=" & templatePath & "|TemplateStamp=" & FileStamp(templatePath)
     RenderSettingsSignature = RenderSettingsSignature & "|ExcludeSuppressed=" & Setting("ExcludeSuppressed", SUPPRESSION_FILTER_DISABLED)
+    RenderSettingsSignature = RenderSettingsSignature & "|LayoutEngine=" & Setting("LayoutEngine", DEFAULT_LAYOUT_ENGINE)
     For Each key In Array("Font", "Organization", "AutoDimensions", "DimensionPlanning", "ProfileSheets", "DimensionColor", "NativeDimensions", "OrthographicViews", "DimensionStrategy", "MaxEdgesForAutoDimensions", "ImportModelDimensions", "UpAxis", "StrictDimensionLayout", "PlanarLabelPrepass", "PlanarModelCandidates", "DimensionSpacing", "Liter1", "Liter2", "Liter3", "DrawnBy", "DrawnDate", "CheckedBy", "CheckedDate", "TechnicalControlBy", "TechnicalControlDate", "NormControlBy", "NormControlDate", "ApprovedBy", "ApprovedDate")
         RenderSettingsSignature = RenderSettingsSignature & "|" & CStr(key) & "=" & Setting(CStr(key), "")
     Next key

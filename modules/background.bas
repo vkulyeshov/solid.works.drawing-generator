@@ -71,6 +71,7 @@ Private Sub FinishBackground()
     sw.FrameWidth = backgroundWidth: sw.FrameHeight = backgroundHeight
     Set currentDrawing = Nothing: Set rootModel = Nothing: Set original = Nothing
     Set jobs = Nothing: Set quantities = Nothing: Set flatBody = Nothing
+    Set memoryReferenceLabels = Nothing
     ' Document writes and window restoration are complete before this marker.
     Set state = fs.OpenTextFile(sw.GetCurrentMacroPathFolder & BACKGROUND_STATE_RELATIVE_PATH, FILE_FOR_APPENDING, False, FILE_UNICODE)
     state.WriteLine "ReadyToExit=1"

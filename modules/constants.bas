@@ -3,6 +3,50 @@ Option Explicit
 
 ' Named constants: keep API codes, wire values and physical dimensions here.
 
+' Shared in-memory dimension layout and template workspace (sheet coordinates, metres).
+Private Const DEFAULT_LAYOUT_ENGINE As String = "memory"
+Private Const MEMORY_LAYOUT_ENGINE As String = "memory"
+Private Const LEGACY_LAYOUT_ENGINE As String = "native"
+Private Const MEMORY_LAYOUT_REPAIR_LIMIT As Long = 2
+Private Const MEMORY_LAYOUT_ROWS As Long = 18
+Private Const MEMORY_LAYOUT_DIRECTIONS As Long = 16
+Private Const MEMORY_LAYOUT_ROW_PITCH_M As Double = 0.005
+Private Const MEMORY_LOCAL_ROW_PITCH_M As Double = 0.0025
+Private Const MEMORY_FREE_TEXT_TAIL_CLEARANCE_M As Double = 0.001
+Private Const MEMORY_FRAME_FALLBACK_M As Double = 0.005
+Private Const MEMORY_FRAME_MIN_SPAN_RATIO As Double = 0.65
+Private Const MEMORY_FRAME_EDGE_RATIO As Double = 0.15
+Private Const MEMORY_FORMAT_LINE_CLEARANCE_M As Double = 0.001
+Private Const MEMORY_FORMAT_JOIN_M As Double = 0.0005
+Private Const MEMORY_LAYOUT_AUDIT_FILE As String = "memory-layout.tsv"
+Private Const MEMORY_PREDICTION_AUDIT_FILE As String = "memory-predictions.tsv"
+Private Const MEMORY_WORKSPACE_AUDIT_FILE As String = "sheet-workspace.tsv"
+Private Const MEMORY_CANDIDATE_LIMIT As Long = 48
+Private Const MEMORY_UNCHANGED_COST_M As Double = 0.0001
+Private Const MEMORY_REFERENCE_PADDING_M As Double = 0.002
+Private Const MEMORY_REFERENCE_CAPTION_GAP_M As Double = 0.004
+Private Const MEMORY_REFERENCE_MIN_RADIUS_M As Double = 0.006
+Private Const MEMORY_REFERENCE_CIRCLE_RATIO As Double = 1.25
+Private Const MEMORY_REFERENCE_ENCLOSURE_FACTOR As Double = 1.4142135623731
+Private Const MEMORY_REFERENCE_TEXT_HEIGHT_M As Double = 0.005
+Private Const MEMORY_REFERENCE_SHELF_GAP_M As Double = 0.001
+Private Const MEMORY_REFERENCE_GRAPHICS_FILE As String = "reference-graphics.tsv"
+Private Const SW_SKETCH_STYLE_CONTINUOUS As Long = 0
+Private Const MEMORY_ANGULAR_MIN_RADIUS_M As Double = 0.001
+Private Const MEMORY_LAYOUT_SEARCH_LIMIT As Long = 100
+Private Const MEMORY_LAYOUT_RELAXED_SEARCH_LIMIT As Long = 1000
+Private Const MEMORY_FORMAT_RECORD_STRIDE As Long = 12
+Private Const MEMORY_FORMAT_START_INDEX As Long = 6
+Private Const MEMORY_FORMAT_END_INDEX As Long = 9
+Private Const SW_EXCLUDE_CROSSHATCH As Integer = 1
+Private Const WORKSPACE_TABLE_TOP_LEFT As Long = 1
+Private Const WORKSPACE_TABLE_TOP_RIGHT As Long = 2
+Private Const WORKSPACE_TABLE_BOTTOM_LEFT As Long = 3
+Private Const WORKSPACE_TABLE_BOTTOM_RIGHT As Long = 4
+Private Const MEMORY_REFERENCE_KIND As Long = -1
+Private Const MEMORY_REFERENCE_PREFIX As String = "reference|"
+Private Const MEMORY_REFERENCE_NOTE_PREFIX As String = "GeneratorReference_"
+
 ' Windows API and background window
 Private Const WIN_METRIC_VIRTUAL_LEFT As Long = 76
 Private Const WIN_METRIC_VIRTUAL_TOP As Long = 77
@@ -766,6 +810,8 @@ Private Const PLANAR_OVERVIEW_DIMENSION_LIMIT As Long = 10
 Private Const PLANAR_OVERVIEW_MIN_EDGE_M As Double = 0.012
 ' Largest model span of local measurements along the overview within one dense-profile detail.
 Private Const PLANAR_DETAIL_MAX_SPAN_M As Double = 0.1
+' Measurements one detail takes at first: nine avoid the crossings that thirteen in one end detail could not.
+Private Const PLANAR_DETAIL_FIRST_GROUP_LIMIT As Long = 9
 ' Detail letters: candidate directions around each circle and farthest distance beyond the circle.
 Private Const PLANAR_DETAIL_LABEL_DIRECTIONS As Long = 24
 Private Const PLANAR_DETAIL_LABEL_REACH_M As Double = 0.03
@@ -781,6 +827,18 @@ Private Const PLANAR_DETAIL_TITLE_OFFSET_M As Double = 0.012
 Private Const PLANAR_DETAIL_DIMENSION_BAND_M As Double = 0.01
 ' A detail view outline exceeds its circle by up to this factor (observed 1.28).
 Private Const PLANAR_DETAIL_OUTLINE_ALLOWANCE As Double = 1.3
+' A detail view outline exceeds the material its circle shows by up to this much (title and boundary).
+Private Const PLANAR_DETAIL_OUTLINE_PAD_M As Double = 0.018
+' Orders tried when detail cells are packed: tallest, widest or largest first.
+Private Const PLANAR_PACK_BY_HEIGHT As Long = 0
+Private Const PLANAR_PACK_BY_WIDTH As Long = 1
+Private Const PLANAR_PACK_BY_AREA As Long = 2
+' Higher order numbers are seeded shuffles: last order tried when sheets are planned and when one sheet is packed again.
+Private Const PLANAR_PACK_PLAN_ORDERS As Long = 60
+Private Const PLANAR_PACK_REPACK_ORDERS As Long = 12
+Private Const PLANAR_PACK_SHUFFLE_SEED As Long = 12345
+' Dimension bands in metres tried around a detail when a sheet is packed again, widest first.
+Private Const PLANAR_REPACK_BANDS_M As String = "0.02|0.016|0.013|0.01|0.005"
 ' Fragment layout: overview height share of the first sheet, space above and below it for its dimensions,
 ' and the largest detail outline on paper before its dimension band.
 Private Const PLANAR_PACK_OVERVIEW_HEIGHT_RATIO As Double = 0.3
@@ -882,7 +940,7 @@ Private Const PLANAR_CROSSING_COST_M As Double = 1
 Private Const PLANAR_WRONG_SIDE_COST_M As Double = 0.1
 Private Const SW_CENTER_MARK_LINEAR_GROUP As Long = 3
 Private Const ERR_FEATURE_VIEW_REQUIRED As Long = 240
-Private Const RENDER_SIGNATURE_PREFIX As String = "20261106-v30-panel-feature-roles|PaperFormat="
+Private Const RENDER_SIGNATURE_PREFIX As String = "20261113-v31-oval-reference-leaders|PaperFormat="
 
 ' API array field indices
 Private Const SHEET_WIDTH_PROPERTY As Long = 5

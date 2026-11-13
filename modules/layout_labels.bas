@@ -527,6 +527,11 @@ Private Sub FinishPersistedNativeLabels(ByRef d As SldWorks.ModelDoc2)
     d.ForceRebuild3 False
     d.GraphicsRedraw2
     sheetNames = AsDrawing(d).GetSheetNames
+    If MemoryLayoutEnabled() Then
+        FinishMemoryDimensionLayout d, "", False
+        AsDrawing(d).ActivateSheet CStr(sheetNames(LBound(sheetNames)))
+        Exit Sub
+    End If
     For index = LBound(sheetNames) To UBound(sheetNames)
         sheetName = sheetNames(index)
         AsDrawing(d).ActivateSheet CStr(sheetName)

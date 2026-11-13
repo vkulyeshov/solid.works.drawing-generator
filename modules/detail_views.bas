@@ -160,7 +160,7 @@ Private Sub AddSameSheetDimensionDetails(ByVal d As SldWorks.ModelDoc2, ByVal ov
         x = DetailCoordinate((bounds(0) + bounds(2)) / 2, 0, overview)
         y = DetailCoordinate((bounds(1) + bounds(3)) / 2, 1, overview)
         Set profile = CreateDetailProfile(d, overview, x, y, radius * overview.ScaleDecimal / coordinateSourceScale)
-        Set v = AsDrawing(d).CreateDetailViewAt4((cell(0) + cell(2)) / 2, (cell(1) + cell(3)) / 2, 0, SW_DETAIL_STANDARD, detailViewScale, 1, Chr$(DETAIL_FIRST_LABEL_CODE + i - 1), SW_DETAIL_CIRCLE, True, False, False, SW_DETAIL_OUTLINE_INTENSITY)
+        Set v = AsDrawing(d).CreateDetailViewAt4((cell(0) + cell(2)) / 2, (cell(1) + cell(3)) / 2, 0, SW_DETAIL_STANDARD, detailViewScale, 1, DetailReferenceLabel(i), SW_DETAIL_CIRCLE, True, False, False, SW_DETAIL_OUTLINE_INTENSITY)
         If v Is Nothing Then
             Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Cannot create a native enlarged detail view."
         End If

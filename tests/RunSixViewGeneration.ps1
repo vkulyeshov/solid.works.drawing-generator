@@ -2,6 +2,7 @@ param([Parameter(Mandatory=$true)][string]$WorkDirectory,
       [string]$ModelFileName = 'Matochina4x100.SLDPRT',
       [switch]$InventoryOnly,
       [switch]$RemapInventoryReferences,
+      [switch]$RemapInputReferences,
       [switch]$ProfileGeometryOnly,
       [switch]$InspectOnly,
       [ValidateRange(60,3600)][int]$MacroTimeoutSeconds = 480)
@@ -86,13 +87,19 @@ public static class SixViewGenerationTest {
     }
     static string Number(double value) { return value.ToString("R",CultureInfo.InvariantCulture); }
     static string Clean(string value) { return value.Replace("\t"," ").Replace("\r"," ").Replace("\n"," "); }
-    static void RemapCopiedReferences(SldWorks sw,string work) {
-        string models=Path.Combine(work,"Models");
+    static void RemapCopiedReferences(SldWorks sw,string work,string folder,string rootName) {
+        string models=Path.Combine(work,folder);
         string prefix="";
         foreach(string line in File.ReadAllLines(Path.Combine(work,"generator.ini"),Encoding.Unicode))
             if(line.StartsWith("SnapshotPrefix=",StringComparison.OrdinalIgnoreCase)) prefix=line.Substring("SnapshotPrefix=".Length).Trim();
         int changed=0;
-        foreach(string path in Directory.GetFiles(models)) {
+        var queue=new Queue<string>();
+        var visited=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if(rootName==null) foreach(string path in Directory.GetFiles(models)) queue.Enqueue(path);
+        else queue.Enqueue(Path.Combine(models,rootName));
+        while(queue.Count>0) {
+            string path=queue.Dequeue();
+            if(!visited.Add(path)) continue;
             string extension=Path.GetExtension(path);
             if(!extension.Equals(".sldasm",StringComparison.OrdinalIgnoreCase) && !extension.Equals(".sldprt",StringComparison.OrdinalIgnoreCase)) continue;
             var dependencies=sw.GetDocumentDependencies2(path,false,false,false) as Array;
@@ -102,7 +109,9 @@ public static class SixViewGenerationTest {
                 if(string.IsNullOrWhiteSpace(previous)) continue;
                 string next=Path.Combine(models,Path.GetFileName(previous));
                 if(!File.Exists(next)) next=Path.Combine(models,prefix+Path.GetFileName(previous));
-                if(!File.Exists(next) || string.Equals(next,previous,StringComparison.OrdinalIgnoreCase)) continue;
+                if(!File.Exists(next)) continue;
+                queue.Enqueue(next);
+                if(string.Equals(next,previous,StringComparison.OrdinalIgnoreCase)) continue;
                 File.SetAttributes(path,File.GetAttributes(path)&~FileAttributes.ReadOnly);
                 if(!sw.ReplaceReferencedDocument(path,previous,next)) {
                     string kind=Path.GetExtension(previous);
@@ -144,7 +153,7 @@ public static class SixViewGenerationTest {
     }
     static void InspectResult(SldWorks sw,string work) {
         string output=Path.Combine(work,"output");
-        string[] files=Directory.GetFiles(Path.Combine(output,"Drawings"),"*.SLDDRW");
+        string[] files=Array.FindAll(Directory.GetFiles(Path.Combine(output,"Drawings"),"*.SLDDRW"),path=>!Path.GetFileName(path).StartsWith("~$",StringComparison.Ordinal));
         if(files.Length!=1) throw new Exception("Expected one test drawing");
         // Keep the input document open. Closing every referenced document can
         // invalidate enumerated COM objects or release a background OLE server.
@@ -160,6 +169,17 @@ public static class SixViewGenerationTest {
             var sheet=(Sheet)drawing.GetCurrentSheet();
             var properties=(double[])sheet.GetProperties();
             report.AppendLine("SHEET\t"+name+"\t"+sheet.SheetFormatVisible+"\t"+Number(properties[2])+"\t"+Number(properties[3]));
+            var formatSketch=sheet.GetTemplateSketch() as Sketch;
+            if(formatSketch!=null) {
+                var formatSegments=formatSketch.GetSketchSegments() as object[];
+                if(formatSegments!=null) foreach(SketchSegment segment in formatSegments) {
+                    var formatLine=segment as SketchLine;
+                    if(formatLine==null) continue;
+                    var start=(SketchPoint)formatLine.GetStartPoint2();
+                    var finish=(SketchPoint)formatLine.GetEndPoint2();
+                    report.AppendLine("FORMATLINE\t"+name+"\t"+Number(start.X)+"\t"+Number(start.Y)+"\t"+Number(finish.X)+"\t"+Number(finish.Y));
+                }
+            }
             var view=(View)((View)drawing.GetFirstView()).GetNextView();
             while(view!=null) {
                 double[] box=(double[])view.GetOutline();
@@ -250,8 +270,8 @@ public static class SixViewGenerationTest {
         result.Append("]}");
         File.WriteAllText(Path.Combine(work,"profile-geometry.json"),result.ToString(),Encoding.UTF8);
     }
-    public static void Run(string work,string modelFileName,bool inventoryOnly,bool remapReferences,bool profileGeometryOnly,int macroTimeoutMilliseconds,bool inspectOnly) {
-        if(inspectOnly && (inventoryOnly || remapReferences || profileGeometryOnly))
+    public static void Run(string work,string modelFileName,bool inventoryOnly,bool remapReferences,bool profileGeometryOnly,int macroTimeoutMilliseconds,bool inspectOnly,bool remapInputReferences) {
+        if(inspectOnly && (inventoryOnly || remapReferences || profileGeometryOnly || remapInputReferences))
             throw new ArgumentException("InspectOnly requires a generated single-part fixture.");
         var prior=new HashSet<int>();
         foreach(Process process in Process.GetProcessesByName("SLDWORKS")) prior.Add(process.Id);
@@ -268,7 +288,11 @@ public static class SixViewGenerationTest {
             sw.FrameTop=GetSystemMetrics(VirtualTop)+GetSystemMetrics(VirtualHeight)+OffscreenOffset;
             if(remapReferences) {
                 if(!inventoryOnly) throw new Exception("Reference remapping is restricted to copied inventory fixtures.");
-                RemapCopiedReferences(sw,work);
+                RemapCopiedReferences(sw,work,"Models",null);
+            }
+            if(remapInputReferences) {
+                if(inventoryOnly) throw new Exception("Input remapping requires a copied generation fixture.");
+                RemapCopiedReferences(sw,work,"input",modelFileName);
             }
             string input=Path.Combine(work,inventoryOnly ? "Models" : "input",modelFileName);
             sw.SetCurrentWorkingDirectory(Path.GetDirectoryName(input));
@@ -313,4 +337,4 @@ public static class SixViewGenerationTest {
 }
 '@
 Add-Type -TypeDefinition $source -ReferencedAssemblies $api
-[SixViewGenerationTest]::Run($work,$ModelFileName,$InventoryOnly.IsPresent,$RemapInventoryReferences.IsPresent,$ProfileGeometryOnly.IsPresent,[int][TimeSpan]::FromSeconds($MacroTimeoutSeconds).TotalMilliseconds,$InspectOnly.IsPresent)
+[SixViewGenerationTest]::Run($work,$ModelFileName,$InventoryOnly.IsPresent,$RemapInventoryReferences.IsPresent,$ProfileGeometryOnly.IsPresent,[int][TimeSpan]::FromSeconds($MacroTimeoutSeconds).TotalMilliseconds,$InspectOnly.IsPresent,$RemapInputReferences.IsPresent)

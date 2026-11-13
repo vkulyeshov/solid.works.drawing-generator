@@ -9,6 +9,7 @@ Private Sub ProcessJob(ByVal j As Object)
     Dim useNativeDimensions As Boolean, sixViews As Boolean
     Dim firstSheetName As String
     On Error GoTo Failed
+    Set memoryReferenceLabels = Nothing
     profileRoleDrawing = False
     profilePagedMode = False
     profileCompactMode = False
@@ -399,7 +400,11 @@ PersistDrawing:
     JobStage j, "Saving rebuilt drawing"
     NormalizeDimensions d
     If Setting("AutoDimensions", "1") = "1" Then
-        JobStage j, "Arranging native dimensions and inclined leaders"
+        If MemoryLayoutEnabled() Then
+            JobStage j, "Planning dimension placement in memory"
+        Else
+            JobStage j, "Arranging native dimensions and inclined leaders"
+        End If
         FinishNativeDimensionLayout d
     End If
     ApplyDrawingDimensionAppearance d

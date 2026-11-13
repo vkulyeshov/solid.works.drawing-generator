@@ -824,6 +824,8 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
     Dim opposite As Long, oppositeLimit As Long, changed As Boolean, oppositeChanged As Boolean, centered As Long, centeredLimit As Long, directionLimit As Long, bisector As Double
     Dim displayName As String, firstRow As Long, nextRow As Long, stored As Variant, sampleX As Double, sampleY As Double
     Dim templates As Collection, target As Collection, template As Variant, derived As Object, templateRows(1) As Long
+    Dim outlineTemplates As Collection, outlineRows(1) As Long, group As Long, half As Double, outward As Double
+    Dim shelfPass As Boolean
     value = display.GetDimension2(SW_DIMENSION_INDEX_FIRST).SystemValue
     displayName = display.GetNameForSelection
     nextRow = PLANAR_LAYOUT_ROWS + 1
@@ -833,6 +835,15 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
             stored = planarCandidateResume(displayName)
             Set result = stored(PLANAR_RESUME_CANDIDATES_INDEX)
             firstRow = stored(PLANAR_RESUME_NEXT_ROW_INDEX)
+            ' A shelf-text pass keeps what an edge dimension already has and adds only the shelf variants.
+            If planarShelfOnly And display.Type2 <> SW_DIMENSION_ANGULAR Then
+                If PlanarOwnsDimension(display) Then
+                    If planarDimensionRequests(displayName)("kind") = "edge" Then
+                        shelfPass = True
+                        firstRow = 0
+                    End If
+                End If
+            End If
             If firstRow > PLANAR_LAYOUT_ROWS Then
                 Set PlanarDimensionCandidates = result
                 Exit Function
@@ -888,6 +899,12 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
             templates.Add New Collection
             templateRows(0) = -1
             templateRows(1) = -1
+            Set outlineTemplates = New Collection
+            outlineTemplates.Add New Collection
+            outlineTemplates.Add New Collection
+            outlineRows(0) = -1
+            outlineRows(1) = -1
+            half = Abs((last(0) - first(0)) * dx + (last(1) - first(1)) * dy) / 2
             For row = firstRow To PLANAR_LAYOUT_ROWS
                 For side = 0 To 1
                     distance = (GOST_OBJECT_OFFSET_M + row * PLANAR_LAYOUT_RADIAL_PITCH_M) * (1 - 2 * side)
@@ -904,35 +921,25 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
                             Next template
                             GoTo NextPlanarCandidateSide
                         End If
-                        ' An edge dimension line that the capture would reject for cutting the material is not sampled.
-                        If request("kind") = "edge" Then
-                            If NativeLeaderCrossesBox(first(0) + nx * distance, first(1) + ny * distance, last(0) + nx * distance, last(1) + ny * distance, planarLayoutOutlines(view.Name)) Then
-                                If ProfileLineCutsMaterial(Array(first(0) + nx * distance, first(1) + ny * distance), Array(last(0) + nx * distance, last(1) + ny * distance), Array(planarLayoutMaterial(view.Name))) Then
-                                    planarSampleSkips = planarSampleSkips + 1
-                                    GoTo NextPlanarCandidateSide
-                                End If
+                        ' A dimension line that the capture would reject for cutting the material is not sampled.
+                        If NativeLeaderCrossesBox(cx + nx * distance - dx * half, cy + ny * distance - dy * half, cx + nx * distance + dx * half, cy + ny * distance + dy * half, planarLayoutOutlines(view.Name)) Then
+                            If ProfileLineCutsMaterial(Array(cx + nx * distance - dx * half, cy + ny * distance - dy * half), Array(cx + nx * distance + dx * half, cy + ny * distance + dy * half), Array(planarLayoutMaterial(view.Name))) Then
+                                planarSampleSkips = planarSampleSkips + 1
+                                GoTo NextPlanarCandidateSide
                             End If
                         End If
                         Set target = templates(side + 1)
                     End If
-                    For along = -1 To 1
-                        shift = along * (length / 2 + width + GOST_ARROW_LENGTH_M)
-                        If request("kind") = "hole-location" Then
-                            shift = along * width
-                        End If
-                        AddPlanarLayoutCandidate d, display, view, region, obstacles, target, cx + nx * distance + dx * shift, cy + ny * distance + dy * shift, value
-                        If request("kind") = "hole-location" Then
-                            bounds = view.GetOutline
-                            If CLng(request("axis")) = SCREEN_X_AXIS_INDEX Then
-                                AddPlanarLayoutCandidate d, display, view, region, obstacles, result, cx + shift, bounds(OUTLINE_BOTTOM_INDEX) - Abs(distance), value
-                                AddPlanarLayoutCandidate d, display, view, region, obstacles, result, cx + shift, bounds(OUTLINE_TOP_INDEX) + Abs(distance), value
-                            Else
-                                AddPlanarLayoutCandidate d, display, view, region, obstacles, result, bounds(OUTLINE_LEFT_INDEX) - Abs(distance), cy + shift, value
-                                AddPlanarLayoutCandidate d, display, view, region, obstacles, result, bounds(OUTLINE_RIGHT_INDEX) + Abs(distance), cy + shift, value
+                    If Not shelfPass Then
+                        For along = -1 To 1
+                            shift = along * (length / 2 + width + GOST_ARROW_LENGTH_M)
+                            If request("kind") = "hole-location" Then
+                                shift = along * width
                             End If
-                        End If
-                    Next along
-                    If request("kind") = "edge" Then
+                            AddPlanarLayoutCandidate d, display, view, region, obstacles, target, cx + nx * distance + dx * shift, cy + ny * distance + dy * shift, value
+                        Next along
+                    End If
+                    If request("kind") = "edge" And planarShelfVariants Then
                         ' Each offset variant below places this base itself before sampling.
                         Set annotation = display.GetAnnotation
                         basePosition = Array(cx + nx * distance, cy + ny * distance, 0)
@@ -962,6 +969,52 @@ Private Function PlanarDimensionCandidates(ByVal d As SldWorks.ModelDoc2, ByVal 
                     End If
 NextPlanarCandidateSide:
                 Next side
+                If request("kind") = "hole-location" Then
+                    ' A hole location may also stand outside the view outline: below and above it for a
+                    ' horizontal dimension, left and right of it for a vertical one.
+                    bounds = view.GetOutline
+                    distance = GOST_OBJECT_OFFSET_M + row * PLANAR_LAYOUT_RADIAL_PITCH_M
+                    For group = 0 To 1
+                        If planarModelCandidates And outlineRows(group) >= 0 Then
+                            ' Farther rows move outward from the outline; outward is that direction along the normal.
+                            outward = -(nx + ny) * (1 - 2 * group)
+                            For Each template In outlineTemplates(group + 1)
+                                Set derived = PlanarTranslateCandidate(template, first, last, dx, dy, nx, ny, (row - outlineRows(group)) * PLANAR_LAYOUT_RADIAL_PITCH_M * outward)
+                                If PlanarModelCandidateValid(derived, view, region, obstacles) Then
+                                    PlanarInsertCandidate result, derived
+                                    planarModelDerived = planarModelDerived + 1
+                                End If
+                            Next template
+                        Else
+                            Set target = result
+                            If planarModelCandidates Then
+                                Set target = outlineTemplates(group + 1)
+                            End If
+                            For along = -1 To 1
+                                shift = along * width
+                                If CLng(request("axis")) = SCREEN_X_AXIS_INDEX Then
+                                    If group = 0 Then
+                                        AddPlanarLayoutCandidate d, display, view, region, obstacles, target, cx + shift, bounds(OUTLINE_BOTTOM_INDEX) - distance, value
+                                    Else
+                                        AddPlanarLayoutCandidate d, display, view, region, obstacles, target, cx + shift, bounds(OUTLINE_TOP_INDEX) + distance, value
+                                    End If
+                                Else
+                                    If group = 0 Then
+                                        AddPlanarLayoutCandidate d, display, view, region, obstacles, target, bounds(OUTLINE_LEFT_INDEX) - distance, cy + shift, value
+                                    Else
+                                        AddPlanarLayoutCandidate d, display, view, region, obstacles, target, bounds(OUTLINE_RIGHT_INDEX) + distance, cy + shift, value
+                                    End If
+                                End If
+                            Next along
+                            If planarModelCandidates And outlineTemplates(group + 1).Count > 0 Then
+                                outlineRows(group) = row
+                                For Each template In outlineTemplates(group + 1)
+                                    PlanarInsertCandidate result, template
+                                Next template
+                            End If
+                        End If
+                    Next group
+                End If
                 If planarModelCandidates Then
                     For side = 0 To 1
                         If templateRows(side) < 0 And templates(side + 1).Count > 0 Then
@@ -1347,6 +1400,9 @@ Private Sub FinishPlanarDimensionLayout(ByVal d As SldWorks.ModelDoc2, ByVal vie
         Set planarCandidateResume = CreateObject("Scripting.Dictionary")
         planarModelCandidates = Setting("PlanarModelCandidates", DEFAULT_PLANAR_MODEL_CANDIDATES) = "1"
         planarModelDerived = 0
+        ' The model first solves without shelf text; a view that needs it samples those variants afterwards.
+        planarShelfVariants = Not planarModelCandidates
+        planarShelfOnly = False
         viewStarted = Timer
 BuildPlanarViewCandidates:
         Set records = New Collection
@@ -1405,6 +1461,12 @@ BuildPlanarViewCandidates:
                 audit.Close
             End If
             If candidates.Count = 0 Then
+                If Not planarShelfVariants Then
+                    Log "PLANAR MODEL adds shelf-text variants: " & view.Name
+                    planarShelfVariants = True
+                    planarShelfOnly = True
+                    GoTo BuildPlanarViewCandidates
+                End If
                 If planarModelCandidates Then
                     GoTo PlanarModelMismatch
                 End If
@@ -1425,9 +1487,16 @@ BuildPlanarViewCandidates:
         planarSearchLimit = PLANAR_STRICT_SEARCH_LIMIT
         Set planarLayoutCompatibility = CreateObject("Scripting.Dictionary")
         If Not SolvePlanarCandidates(records, chosen, steps) Then
+            If Not planarShelfVariants Then
+                Log "PLANAR MODEL adds shelf-text variants: " & view.Name
+                planarShelfVariants = True
+                planarShelfOnly = True
+                GoTo BuildPlanarViewCandidates
+            End If
             If planarCandidateBudget > 0 Then
                 Log "PLANAR bounded candidate pass needs more alternatives; expanding this view only from the next unsampled rows: " & view.Name
                 planarCandidateBudget = 0
+                planarShelfOnly = False
                 GoTo BuildPlanarViewCandidates
             End If
             ' DSTU GOST 2.307 asks to avoid these crossings. When no assignment
@@ -1517,6 +1586,8 @@ PlanarModelMismatch:
         ' SolidWorks did not draw a modelled placement as predicted: sample this view natively.
         Log "PLANAR MODEL mismatch in " & view.Name & "; sampling this view natively"
         planarModelCandidates = False
+        planarShelfVariants = True
+        planarShelfOnly = False
         planarCandidateBudget = PLANAR_LAYOUT_CANDIDATE_LIMIT
         Set planarCandidateResume = CreateObject("Scripting.Dictionary")
         GoTo BuildPlanarViewCandidates

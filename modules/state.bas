@@ -1,5 +1,6 @@
 Attribute VB_Name = "state"
 Option Explicit
+Private memoryReferenceLabels As Object
 Private planarLayoutCompatibility As Object
 Private planarLayoutMaterial As Object
 Private planarLayoutVisibleMaterial As Object
@@ -8,7 +9,7 @@ Private planarDetailLabels As Object
 Private planarDetailLabelBoxes As Object
 Private planarSplitOverview As Boolean, planarSplitPending As Boolean, planarSplitGroups As Object, planarSplitRequested As Object
 Private planarOverviewName As String, jobAttempt As Long
-Private planarModelCandidates As Boolean, planarModelDerived As Long
+Private planarModelCandidates As Boolean, planarModelDerived As Long, planarShelfVariants As Boolean, planarShelfOnly As Boolean
 Private planarLayoutRejections As Object
 Private planarTextMetricCache As Object
 Private checkpointPath As String, snapshotPath As String, sourcePath As String, sourceStamp As String, snapshotConfig As String

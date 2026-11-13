@@ -179,6 +179,7 @@ Public Sub main()
             interruptedJobNumber = 0
             WriteFailedJobs
             Set flatBody = Nothing
+            Set memoryReferenceLabels = Nothing
             ' Close copied assemblies before copied parts, after ProcessJob releases locals.
             CloseSnapshots
             If CLng(Setting("JobsPerBatch", DEFAULT_BATCH_SIZE_TEXT)) > 0 Then

@@ -149,6 +149,13 @@ class ModularSourceTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Use viewScaleValue'):
                     read_source(self.project)
 
+    def test_option_variable_is_rejected_before_native_compilation(self):
+        for declaration in ['Dim option As Object', 'Dim record As Object, OPTION As Object']:
+            with self.subTest(declaration=declaration):
+                self.write_module('helpers', 'Private Sub SetMessage()\n    ' + declaration + '\nEnd Sub\n')
+                with self.assertRaisesRegex(ValueError, 'VBA reserved variable name: Option'):
+                    read_source(self.project)
+
     def test_scale_dictionary_key_and_api_property_are_allowed(self):
         self.write_module('helpers', 'Private Sub SetMessage()\n    Dim viewScaleValue As Double\n'
                           '    viewScaleValue = view.ScaleDecimal\n    item.Add "scale", viewScaleValue\nEnd Sub\n')

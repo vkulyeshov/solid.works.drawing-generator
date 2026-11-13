@@ -185,7 +185,7 @@ End Sub
 Private Sub AddNativeSymmetryCenterline(ByVal d As SldWorks.ModelDoc2, ByVal v As SldWorks.View, ByVal symmetry As Object)
     Dim center As Variant, flags As Variant, transform As Variant, outline As Variant, x As Double, y As Double, axis As Long
     Dim dx As Double, dy As Double, segment As SldWorks.SketchSegment
-    Dim sheet As SldWorks.Sheet, properties As Variant, sketchScale As Double, audit As Object, endpoints As Variant
+    Dim sheet As SldWorks.Sheet, properties As Variant, sketchScale As Double, audit As Object, endpoints As Variant, oldFocus As Boolean
     If v.GetFirstDisplayDimension5 Is Nothing Then
         Exit Sub
     End If
@@ -203,6 +203,10 @@ Private Sub AddNativeSymmetryCenterline(ByVal d As SldWorks.ModelDoc2, ByVal v A
     If sketchScale <= 0 Then
         Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "Invalid drawing scale for a symmetry centerline."
     End If
+    ' Keep sheet-space axes out of model-view sketches. Otherwise SolidWorks
+    ' can attach them to a nearby view and enlarge its outline after reopening.
+    oldFocus = sheet.FocusLocked
+    sheet.FocusLocked = True
     For axis = 0 To 2
         If CBool(flags(axis)) Then
             dx = transform(axis * 3)
@@ -224,12 +228,15 @@ Private Sub AddNativeSymmetryCenterline(ByVal d As SldWorks.ModelDoc2, ByVal v A
             End If
         End If
     Next axis
+    sheet.FocusLocked = oldFocus
     d.ClearSelection2 True
 End Sub
 
 Private Sub FinishNativeDimensionLayout(ByVal d As SldWorks.ModelDoc2)
     If profilePagedMode Then
         FinishProfilePages d
+    ElseIf MemoryLayoutEnabled() Then
+        FinishMemoryDimensionLayout d
     Else
         FinishNativeDimensionLayoutCore d
     End If
