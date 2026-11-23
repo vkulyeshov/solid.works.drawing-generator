@@ -9,6 +9,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from project_paths import work_path
 from vba_sources import read_source
+from test_spatial_bounds import script_routine
 
 source = read_source()
 names = ['MinD', 'ProfileRoot', 'PlanarAngle', 'PlanarAcuteAngle', 'PlanarArrowBisector', 'PlanarDatumPlan', 'PlanarDistance', 'PlanarMirror', 'PlanarPointIndex',
@@ -46,10 +47,20 @@ for name in names:
         body = body.replace('output.Add Array(', 'output.Add output.Count + 1, Array(')
         body = body.replace('output.Add last', 'output.Add output.Count + 1, last')
     functions.append(body)
+for name in ['MaxD', 'NativeBoxesOverlap', 'PanelMaterialBounds', 'PlanarShrinkTriangle',
+             'SpatialBoundsOverlap', 'SpatialLineBounds', 'SpatialLineBoxes', 'SpatialPolygonBoxes',
+             'SpatialCandidate', 'SpatialPolygonsOverlap', 'SpatialLinesHitText',
+             'SpatialBasesConflict', 'SpatialBasesCrossLines', 'SpatialCandidatesCompatible']:
+    functions.append(script_routine(source, name))
 constants = ['Const ' + m[1] + ' = ' + re.sub(r'(?<=\d)#', '', m[2])
              for m in re.finditer(r'^Private Const (\w+) As \w+ = (.+)$', source, re.M)]
 harness = r'''
+Dim planarStrictCrossings, planarSearchLimit
+planarStrictCrossings=False
+planarSearchLimit=20000
 Sub Log(ByVal message)
+End Sub
+Sub CheckExecutionBudget()
 End Sub
 Sub Check(ByVal condition, ByVal message)
     If Not condition Then
@@ -70,16 +81,26 @@ Function Nodes(ByVal coordinates)
     Set Nodes = result
 End Function
 Function Candidate(ByVal textBox, ByVal segment)
-    Dim result, polygons, lines, bases
+    Dim result, polygons, lines, bases, heads, bounds, point
     Set result = CreateObject("Scripting.Dictionary")
     Set polygons = CreateObject("Scripting.Dictionary")
     Set lines = CreateObject("Scripting.Dictionary")
     Set bases = CreateObject("Scripting.Dictionary")
+    Set heads = CreateObject("Scripting.Dictionary")
+    bounds=Array(segment(0),segment(1),segment(0),segment(1))
+    For Each point In textBox
+        bounds(0)=MinD(bounds(0),point(0)): bounds(1)=MinD(bounds(1),point(1))
+        bounds(2)=-MinD(-bounds(2),-point(0)): bounds(3)=-MinD(-bounds(3),-point(1))
+    Next
+    bounds(0)=MinD(bounds(0),segment(2)): bounds(1)=MinD(bounds(1),segment(3))
+    bounds(2)=-MinD(-bounds(2),-segment(2)): bounds(3)=-MinD(-bounds(3),-segment(3))
     polygons.Add 1, textBox
     lines.Add 1, segment
     result.Add "text", polygons
     result.Add "lines", lines
     result.Add "bases", bases
+    result.Add "heads", heads
+    result.Add "bounds", bounds
     Set Candidate = result
 End Function
 Sub LayoutChecks

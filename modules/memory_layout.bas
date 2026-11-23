@@ -18,7 +18,7 @@ Private Function MemoryCapture(ByVal display As SldWorks.DisplayDimension, ByVal
     Set result = CreateObject("Scripting.Dictionary")
     result.Add "name", display.GetNameForSelection
     result.Add "owner", view.Name
-    result.Add "type", display.Type2
+    result.Add "type", LayoutDimensionKind(display.Type2)
     result.Add "sectorState", 0
     result.Add "position", display.GetAnnotation.GetPosition
     result.Add "controlPoint", display.GetAnnotation.GetPosition
@@ -36,9 +36,12 @@ Private Function MemoryCapture(ByVal display As SldWorks.DisplayDimension, ByVal
         End If
     Next index
     result.Add "heads", heads
-    If display.Type2 = SW_DIMENSION_LINEAR And data.GetArrowHeadCount = DIMENSION_REFERENCE_SECOND Then
+    If LayoutDimensionKind(display.Type2) = SW_DIMENSION_LINEAR And data.GetArrowHeadCount > 0 Then
         first = data.GetArrowHeadAtIndex2(0)
-        last = data.GetArrowHeadAtIndex2(1)
+        last = first
+        If data.GetArrowHeadCount = DIMENSION_REFERENCE_SECOND Then
+            last = data.GetArrowHeadAtIndex2(1)
+        End If
         direction = LayoutLinearDirection(display)
         If Not IsEmpty(direction) Then
             result.Add "direction", direction
@@ -72,7 +75,7 @@ Private Sub MemoryPrepare(ByVal display As SldWorks.DisplayDimension)
         format.CharHeight = TEXT_HEIGHT_SMALL_M
     End If
     display.GetAnnotation.SetTextFormat SW_ANNOTATION_TEXT_FORMAT_FIRST, False, format
-    If display.Type2 = SW_DIMENSION_LINEAR Or display.Type2 = SW_DIMENSION_ANGULAR Then
+    If LayoutDimensionKind(display.Type2) = SW_DIMENSION_LINEAR Or display.Type2 = SW_DIMENSION_ANGULAR Then
         display.OffsetText = False
         display.CenterText = True
         Set data = display.GetDisplayData
@@ -82,7 +85,7 @@ Private Sub MemoryPrepare(ByVal display As SldWorks.DisplayDimension)
             span = Sqr((first(0) - last(0)) ^ 2 + (first(1) - last(1)) ^ 2)
             text = LayoutInkBounds(LayoutInkPolygons(display))
             width = text(2) - text(0)
-            If display.Type2 = SW_DIMENSION_LINEAR Then
+            If LayoutDimensionKind(display.Type2) = SW_DIMENSION_LINEAR Then
                 direction = LayoutLinearDirection(display)
                 If Not IsEmpty(direction) Then
                     width = Abs(direction(0)) * (text(2) - text(0)) + Abs(direction(1)) * (text(3) - text(1))
@@ -93,11 +96,11 @@ Private Sub MemoryPrepare(ByVal display As SldWorks.DisplayDimension)
             Else
                 display.ArrowSide = SW_DIMENSION_ARROWS_OUTSIDE
             End If
-            If display.Type2 = SW_DIMENSION_LINEAR And span < width + 2 * GOST_ARROW_HEAD_LENGTH_M + DIMENSION_GEOMETRY_GAP_M And Not IsEmpty(direction) Then
+            If LayoutDimensionKind(display.Type2) = SW_DIMENSION_LINEAR And span < width + 2 * GOST_ARROW_HEAD_LENGTH_M + DIMENSION_GEOMETRY_GAP_M And Not IsEmpty(direction) Then
                 display.CenterText = False
                 position = Array((first(0) + last(0)) / 2 + direction(0) * (span / 2 + GOST_ARROW_LENGTH_M + width / 2), (first(1) + last(1)) / 2 + direction(1) * (span / 2 + GOST_ARROW_LENGTH_M + width / 2), 0)
                 display.GetAnnotation.SetPosition2 position(0), position(1), position(2)
-            ElseIf display.Type2 = SW_DIMENSION_LINEAR Then
+            ElseIf LayoutDimensionKind(display.Type2) = SW_DIMENSION_LINEAR Then
                 ' Some newly created projected dimensions retain their old
                 ' text anchor until explicitly placed on the measured midpoint.
                 display.GetAnnotation.SetPosition2 (first(0) + last(0)) / 2, (first(1) + last(1)) / 2, 0
@@ -113,6 +116,7 @@ End Sub
 
 Private Sub MemoryAddCandidate(ByVal candidate As Object, ByVal record As Object, ByVal obstacles As Collection)
     Dim existing As Object, first As Variant, last As Variant
+    PollExecutionBudget
     If Not MemoryCandidateFits(candidate, record("region"), obstacles, record("material"), record("outline")) Then
         Exit Sub
     End If
@@ -186,7 +190,7 @@ Private Sub MemoryBuildCandidates(ByVal record As Object, ByVal obstacles As Col
                 ' dimensions can rebuild their baseline differently when a
                 ' previously centered label is made free. Short dimensions
                 ' already prepared as free text still offer both end positions.
-                If seed("centerText") = False Then
+                If seed("centerText") = False And seed("heads").Count = DIMENSION_REFERENCE_SECOND Then
                     For textSide = -1 To 1 Step 2
                         Set alternate = MemoryLinearTextCandidate(candidate, textSide)
                         MemoryAddCandidate alternate, record, obstacles
@@ -242,6 +246,68 @@ Private Sub MemoryApply(ByVal d As SldWorks.ModelDoc2, ByVal display As SldWorks
     display.ArrowSide = CLng(candidate("arrowSide"))
     display.GetAnnotation.SetPosition2 point(0), point(1), point(2)
     display.CenterText = candidate("centerText")
+End Sub
+
+Private Function MemoryCanSampleNatively(ByVal seed As Object) As Boolean
+    If seed("type") = SW_DIMENSION_LINEAR Then
+        MemoryCanSampleNatively = seed.Exists("direction")
+    ElseIf seed("type") = SW_DIMENSION_DIAMETER Or seed("type") = SW_DIMENSION_RADIAL Then
+        MemoryCanSampleNatively = seed.Exists("anchor")
+    End If
+End Function
+
+' Native anchors can clamp to a measured axis or reattach to a circle.
+' Sample only annotations whose calculated representation proved unstable.
+Private Sub MemoryNativeCandidates(ByVal d As SldWorks.ModelDoc2, ByVal display As SldWorks.DisplayDimension, ByVal view As SldWorks.View, ByVal record As Object)
+    Dim seed As Object, direction As Variant, point As Variant, target As Variant
+    Dim row As Long, side As Long, textSide As Long, distance As Double, nx As Double, ny As Double
+    Dim index As Long, angle As Double
+    Set seed = record("seed")
+    Set record("candidates") = New Collection
+    Set planarLayoutRejections = CreateObject("Scripting.Dictionary")
+    If seed("type") = SW_DIMENSION_LINEAR Then
+        direction = seed("direction")
+        nx = -direction(1): ny = direction(0)
+        point = seed("controlPoint")
+        For row = 0 To MEMORY_NATIVE_LINEAR_ROWS
+            For side = -1 To 1 Step 2
+                distance = side * row * MEMORY_LAYOUT_ROW_PITCH_M
+                For textSide = -1 To 1
+                    target = Array(point(0) + nx * distance + direction(0) * textSide * MEMORY_NATIVE_LINEAR_TEXT_SHIFT_M, point(1) + ny * distance + direction(1) * textSide * MEMORY_NATIVE_LINEAR_TEXT_SHIFT_M, point(2))
+                    MemorySampleNativeCandidate d, display, view, record, target
+                Next textSide
+            Next side
+        Next row
+    Else
+        point = seed("anchor")
+        For row = 1 To MEMORY_NATIVE_LINEAR_ROWS
+            distance = row * MEMORY_NATIVE_LINEAR_TEXT_SHIFT_M
+            For index = 0 To MEMORY_NATIVE_CIRCULAR_DIRECTIONS - 1
+                angle = index * FULL_REVOLUTION_RAD / MEMORY_NATIVE_CIRCULAR_DIRECTIONS
+                target = Array(point(0) + distance * Cos(angle), point(1) + distance * Sin(angle), seed("controlPoint")(2))
+                MemorySampleNativeCandidate d, display, view, record, target
+            Next index
+        Next row
+    End If
+    MemoryApply d, display, seed, record
+    Log "MEMORY native exceptional dimension samples " & record("name") & "; candidates=" & record("candidates").Count
+End Sub
+
+Private Sub MemorySampleNativeCandidate(ByVal d As SldWorks.ModelDoc2, ByVal display As SldWorks.DisplayDimension, ByVal view As SldWorks.View, ByVal record As Object, ByVal target As Variant)
+    Dim seed As Object, candidate As Object
+    CheckExecutionBudget
+    Set seed = record("seed")
+    display.OffsetText = False
+    display.CenterText = False
+    display.ArrowSide = CLng(seed("arrowSide"))
+    display.GetAnnotation.SetPosition2 target(0), target(1), target(2)
+    d.GraphicsRedraw2
+    Set candidate = MemoryCapture(display, view)
+    If Abs(CDbl(candidate("value")) - CDbl(seed("value"))) > LEADER_VALUE_TOLERANCE_M Then
+        Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "A model measurement changed during native verification."
+    End If
+    candidate("controlPoint") = target
+    MemoryAddCandidate candidate, record, record("obstacles")
 End Sub
 
 Private Function MemoryRecordRegion(ByVal view As SldWorks.View, ByVal frame As Variant) As Variant
@@ -336,6 +402,7 @@ Private Sub FinishMemoryDimensionLayout(ByVal d As SldWorks.ModelDoc2, Optional 
     End If
     sheetNames = AsDrawing(d).GetSheetNames
     For Each sheetName In sheetNames
+        BeginLayoutBudget CStr(sheetName)
         AsDrawing(d).ActivateSheet CStr(sheetName)
         AsDrawing(d).ActivateView ""
         AsDrawing(d).GetCurrentSheet.SheetFormatVisible = True
@@ -422,7 +489,16 @@ Private Sub FinishMemoryDimensionLayout(ByVal d As SldWorks.ModelDoc2, Optional 
             Set pending = New Collection
             For Each record In records
                 Set ownObstacles = record("obstacles")
-                MemoryBuildCandidates record, ownObstacles
+                If record.Exists("nativeSampled") Then
+                    MemoryNativeCandidates d, displays(record("name")), owners(record("name")), record
+                Else
+                    MemoryBuildCandidates record, ownObstacles
+                    Set snapshot = record("seed")
+                    If record("candidates").Count = 0 And MemoryCanSampleNatively(snapshot) Then
+                        record.Add "nativeSampled", True
+                        MemoryNativeCandidates d, displays(record("name")), owners(record("name")), record
+                    End If
+                End If
                 Log "MEMORY CANDIDATES " & record("name") & "; count=" & record("candidates").Count
                 If record("candidates").Count = 0 Then
                     Log "MEMORY REJECT " & record("name") & "; " & Join(planarLayoutRejections.Keys, ", ")
@@ -440,7 +516,9 @@ Private Sub FinishMemoryDimensionLayout(ByVal d As SldWorks.ModelDoc2, Optional 
             planarSearchLimit = MEMORY_LAYOUT_SEARCH_LIMIT
             Set planarLayoutCompatibility = CreateObject("Scripting.Dictionary")
             steps = 0
+            BeginStrictSearch
             If MemorySolveCandidates(pending, chosen, steps) = False Then
+                EndStrictSearch
                 Log "MEMORY strict witness crossing search exhausted; trying the permitted witness crossings on " & sheetName
                 planarStrictCrossings = False
                 planarSearchLimit = MEMORY_LAYOUT_RELAXED_SEARCH_LIMIT
@@ -458,6 +536,7 @@ Private Sub FinishMemoryDimensionLayout(ByVal d As SldWorks.ModelDoc2, Optional 
                 Err.Raise vbObjectError + ERR_DIMENSION_LAYOUT, , "No collision-free in-memory assignment fits sheet " & sheetName
             End If
 MemoryAssignmentReady:
+            EndStrictSearch
             ImprovePlanarAssignment records, chosen
             For Each candidate In chosen
                 MemoryAuditGeometry candidate, "expected|" & CStr(pass)
@@ -491,11 +570,20 @@ MemoryAssignmentReady:
                     Log "MEMORY NATIVE mismatch " & name & "; pass=" & pass & "; " & Join(planarLayoutRejections.Keys, ", ")
                     Set record("seed") = snapshot
                     MemoryWriteSeed record
+                    If MemoryCanSampleNatively(snapshot) Then
+                        record("nativeSampled") = True
+                    End If
                 End If
                 For Each other In actual
                     If PlanarCandidatesCompatible(snapshot, other) = False Then
                         ok = False
                         Log "MEMORY NATIVE collision " & name & " | " & other("name")
+                        If MemoryCanSampleNatively(snapshot) Then
+                            record("nativeSampled") = True
+                        End If
+                        If MemoryCanSampleNatively(other) Then
+                            recordMap(other("name"))("nativeSampled") = True
+                        End If
                     End If
                 Next other
                 actual.Add snapshot
@@ -525,6 +613,7 @@ MemoryAssignmentReady:
             Next item
         End If
 NextMemorySheet:
+        EndLayoutBudget
     Next sheetName
     If selectedView = "" And prepare And SixViewMode() And Not profileRoleDrawing Then
         RenderHolePatternCircles d
@@ -557,6 +646,11 @@ End Sub
 Private Function MemorySolveCandidates(ByVal remaining As Collection, ByVal chosen As Collection, ByRef steps As Long) As Boolean
     Dim record As Object, best As Object, candidate As Object, alternative As Object
     Dim nextRemaining As Collection, available As Collection, child As Object, possible As Boolean
+    CheckExecutionBudget
+    If MemoryStrictSearchExpired() Then
+        steps = planarSearchLimit + 1
+        Exit Function
+    End If
     steps = steps + 1
     If steps > planarSearchLimit Then
         Exit Function
@@ -576,6 +670,11 @@ Private Function MemorySolveCandidates(ByVal remaining As Collection, ByVal chos
         End If
     Next record
     For Each candidate In best("candidates")
+        ' Unwind every parent when a child exhausts the shared budget. Without
+        ' this guard parents keep filtering all remaining candidate domains.
+        If steps > planarSearchLimit Then
+            Exit Function
+        End If
         Set nextRemaining = New Collection
         possible = True
         For Each record In remaining
@@ -584,6 +683,10 @@ Private Function MemorySolveCandidates(ByVal remaining As Collection, ByVal chos
                 For Each alternative In record("candidates")
                     If PlanarCandidatesCompatibleCached(candidate, alternative) Then
                         available.Add alternative
+                    End If
+                    If MemoryStrictSearchExpired() Then
+                        steps = planarSearchLimit + 1
+                        Exit Function
                     End If
                 Next alternative
                 If available.Count = 0 Then

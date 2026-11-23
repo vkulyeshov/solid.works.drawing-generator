@@ -21,6 +21,23 @@ def number(value):
     return float(value.replace(',', '.'))
 
 
+def pdf_measurement_near_graphics(page, box, value, kind):
+    """Imported Toolbox DisplayData can omit digits that PDF export prints."""
+    expected = math.degrees(value) if kind == 3 else value * 1000
+    metres_per_point = 0.0254 / 72
+    margin = 0.003
+    for word in page.extract_words():
+        ink = [word['x0'] * metres_per_point, (page.height - word['bottom']) * metres_per_point,
+               word['x1'] * metres_per_point, (page.height - word['top']) * metres_per_point]
+        if (ink[2] < box[0] - margin or ink[0] > box[2] + margin or
+                ink[3] < box[1] - margin or ink[1] > box[3] + margin):
+            continue
+        for token in re.findall(r'[-+]?\d+(?:[.,]\d+)?', word['text']):
+            if math.isclose(number(token), expected, abs_tol=0.00500001):
+                return True
+    return False
+
+
 def check(directory):
     output = external_path(directory) / 'output'
     log = (output / 'run.log').read_text('utf-16')
@@ -48,7 +65,6 @@ def check(directory):
     assert set(audited) == set(native), 'A verified dimension was lost or gained after saving'
     for key, row in audited.items():
         assert math.isclose(number(row[5]), number(native[key][5]), abs_tol=1e-9), key
-        assert native[key][8].strip(), ('An arrow has no printed measurement', key)
     sheets = [row for row in saved if row[0] == 'SHEET']
     assert all(row[2] == 'True' for row in sheets), 'A continuation format is hidden'
     for sheet in sheets:
@@ -58,6 +74,15 @@ def check(directory):
     pdf = PdfReader(pdfs[0])
     assert len(pdf.pages) == len(sheets), 'The PDF lost a sheet'
     text = '\n'.join(page.extract_text() for page in pdf.pages)
+    # Do not mistake an incomplete reopened COM text run for a missing value.
+    # Require the actual number near this annotation's verified paper bounds.
+    with pdfplumber.open(pdfs[0]) as plotted:
+        pages = {sheet[1]: page for sheet, page in zip(sheets, plotted.pages)}
+        for key, row in audited.items():
+            if not re.search(r'\d', native[key][8]):
+                assert pdf_measurement_near_graphics(pages[key[0]], list(map(number, row[6:10])),
+                                                    number(native[key][5]), int(native[key][4])), (
+                    'An arrow has no printed measurement near its graphics', key)
     for label in set(references):
         assert len(re.findall(r'(?<!\w)' + re.escape(label) + r'(?!\w)', text)) >= 2, (
             'A source letter has no matching detail caption', label)

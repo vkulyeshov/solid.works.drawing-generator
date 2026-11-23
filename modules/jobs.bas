@@ -39,6 +39,7 @@ Private Sub ProcessJob(ByVal j As Object)
     Set featurePatternGraphics = Nothing
     Set dimensionKeys = CreateObject("Scripting.Dictionary")
     outName = CStr(j("out"))
+    BeginJobBudget outName
     Log "JOB " & outName
     Dim previousDrawing As SldWorks.ModelDoc2
     Set previousDrawing = sw.GetOpenDocumentByName(runDir & DRAWINGS_RELATIVE_DIRECTORY & outName & DRAWING_EXTENSION)
@@ -430,11 +431,13 @@ PersistDrawing:
     End If
     AppendManifest jobNumber & vbTab & OriginalBase(doc.GetPathName) & vbTab & cfg & vbTab & bodyName & vbTab & j("qty") & vbTab & outName & DRAWING_EXTENSION & vbTab & "OK; REVIEW"
     j("status") = STATE_DONE: j("stage") = "Saved"
+    CheckExecutionBudget
     j("drawingBytes") = CStr(fs.GetFile(runDir & DRAWINGS_RELATIVE_DIRECTORY & outName & DRAWING_EXTENSION).Size)
     j("pdfBytes") = CStr(fs.GetFile(runDir & PDF_RELATIVE_DIRECTORY & outName & PDF_EXTENSION).Size)
     RecountJobResults
     SaveCheckpoint
     Log "OK " & outName
+    EndJobBudget
     dimensionKeys.RemoveAll
     Set coordinateSelection = Nothing
     Set coordinateSourceView = Nothing
@@ -446,6 +449,10 @@ PersistDrawing:
 Failed:
     Dim msg As String
     msg = Err.Number & " " & Err.Description
+    If executionTimeoutMessage <> "" Then
+        msg = CStr(vbObjectError + ERR_EXECUTION_TIMEOUT) & " " & executionTimeoutMessage
+    End If
+    EndJobBudget
     batchFailures = batchFailures + 1
     On Error Resume Next
     j("status") = STATE_FAILED: j("stage") = msg

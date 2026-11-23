@@ -123,6 +123,7 @@ Private Sub MemoryRebound(ByVal candidate As Object)
         Next point
     Next polygon
     candidate("bounds") = bounds
+    SpatialClear candidate
 End Sub
 
 ' Witness feet are captured once. No COM objects are used by candidate generation.
@@ -177,16 +178,21 @@ Private Function MemoryCandidateFits(ByVal candidate As Object, ByVal region As 
         End If
     Else
         For Each polygon In candidate("text")
-            If PanelBoxTouchesMaterial(LayoutInkBoundsOfPolygon(polygon), material) Then
-                RejectPlanarCandidate "own material text"
-                Exit Function
+            box = LayoutInkBoundsOfPolygon(polygon)
+            If SpatialBoundsOverlap(box, outline) Then
+                If PanelBoxTouchesMaterial(box, material) Then
+                    RejectPlanarCandidate "own material text"
+                    Exit Function
+                End If
             End If
         Next polygon
         If candidate("type") = SW_DIMENSION_LINEAR Or candidate("type") = SW_DIMENSION_ANGULAR Then
             For Each line In candidate("bases")
-                If ProfileLineCutsMaterial(Array(line(0), line(1)), Array(line(2), line(3)), material) Then
-                    RejectPlanarCandidate "own material baseline"
-                    Exit Function
+                If SpatialBoundsOverlap(SpatialLineBounds(line), outline) Then
+                    If ProfileLineCutsMaterial(Array(line(0), line(1)), Array(line(2), line(3)), material) Then
+                        RejectPlanarCandidate "own material baseline"
+                        Exit Function
+                    End If
                 End If
             Next line
         End If

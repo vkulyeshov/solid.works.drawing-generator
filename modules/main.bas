@@ -15,6 +15,7 @@ Public Sub main()
     completed = 0: failures = 0: warningCount = 0: jobNumber = 0: viewCounter = 0
     batchFailures = 0: interruptedJobNumber = 0
     ReadSettings sw.GetCurrentMacroPathFolder & SETTINGS_RELATIVE_PATH
+    ConfigureExecutionBudgets
     excludeSuppressed = SuppressionFilterEnabled()
     progressPath = Setting("LauncherProgress", "")
     dimensionColorValue = DrawingDimensionColor()
@@ -220,7 +221,7 @@ Public Sub main()
     ElseIf HasRunnableJobs() Then
         ReportProgress STATE_PAUSED, "Batch saved; drawings=" & completed & "/" & plannedJobs & "; failed=" & failures & "; continuing automatically"
     Else
-        ReportProgress STATE_FAILED, "All jobs attempted; drawings=" & completed & "; failed=" & failures & "; selected=" & plannedJobs & "; attempt limits reached. See failed-jobs.tsv."
+        ReportProgress STATE_FAILED, "No eligible jobs remain; drawings=" & completed & "; failed=" & failures & "; selected=" & plannedJobs & "; failed jobs reached their attempt limit or timeout policy. See failed-jobs.tsv."
     End If
     Debug.Print "Drawing pack: " & completed & " drawings; " & failures & " failures. " & runDir
     If Setting("ShowSummary", "0") = "1" Then

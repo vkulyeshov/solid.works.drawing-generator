@@ -68,6 +68,8 @@ python -B tests/test_repository.py
 python -B tests/test_modular_sources.py
 python -B tests/test_build.py
 python -B tests/test_launcher_contract.py
+python -B tests/test_execution_budget.py
+python -B tests/test_native_pdf_measurement.py
 python -B tests/test_controller_recovery.py
 python -B tests/test_snapshot_cleanup.py
 python -B tests/test_snapshot_targets.py
@@ -76,6 +78,7 @@ python -B tests/test_inventory_saved.py
 python -B tests/test_source_validation.py
 python -B tests/test_dimension_layout.py
 python -B tests/test_memory_layout.py
+python -B tests/test_spatial_bounds.py
 python -B tests/test_profile_pages.py
 python -B tests/test_compact_profiles.py
 python -B tests/test_panel_text_bounds.py
@@ -96,6 +99,34 @@ Successful native runs must verify actual graphics before exporting a PDF.
 Run `python -B tests/test_memory_layout_native.py EXTERNAL_CASE_DIRECTORY` to
 compare the reopened drawing's measurements with the verified layout, check
 frame visibility on every sheet and match source letters with PDF captions.
+
+To exercise an actual blocked COM call and checkpoint recovery, run
+`python -B tests/test_native_job_timeout.py --model C:\Models\Part.SLDPRT --work-directory C:\external\timeout-test`.
+This copies the input, adds a deliberate sleep only to the external test macro,
+and verifies that the launcher terminates its dedicated process and resumes
+without repeating the timed-out job. Use a fresh external directory. The native
+single-model harness also accepts `-ModelConfiguration NAME` to select a precise
+configuration in its copied input before generation.
+
+For performance measurements, create an instrumented external fixture:
+
+```bat
+python -B tests/benchmark_generation.py prepare --model C:\Models\Part.SLDPRT --work-directory C:\external\benchmark
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/RunSixViewGeneration.ps1 -WorkDirectory C:\external\benchmark -ModelFileName Part.SLDPRT
+python -B tests/benchmark_generation.py report --work-directory C:\external\benchmark
+```
+
+The probe leaves production VBA sources unchanged and disables detailed geometry
+audits in its test INI. It records native startup, model opening, macro execution,
+layout phases and overlapping logging cost. The additional native inspection and
+test shutdown are reported separately and do not count as drawing generation.
+`benchmark-report.json` and `benchmark-report.md` contain the complete result. A single run is a sample,
+not an average. Run `python -B tests/test_benchmark_generation.py` to check clock
+accounting, midnight rollover and probe source validation.
+
+`test_spatial_bounds.py` compares cached broad-phase checks with the original
+exact decision sequence under WSH: randomized strict/relaxed cases, touching and
+near-collinear geometry, concave material with a hole, and copied-cache isolation.
 
 ### SolidWorks integration tests
 

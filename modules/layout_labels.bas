@@ -1,6 +1,17 @@
 Attribute VB_Name = "layout_labels"
 Option Explicit
 
+' Imported sketch dimensions can retain their horizontal/vertical API type.
+' All three kinds use the same linear layout geometry in sheet coordinates.
+Private Function LayoutDimensionKind(ByVal nativeKind As Long) As Long
+    Select Case nativeKind
+        Case SW_DIMENSION_HORIZONTAL_LINEAR, SW_DIMENSION_VERTICAL_LINEAR
+            LayoutDimensionKind = SW_DIMENSION_LINEAR
+        Case Else
+            LayoutDimensionKind = nativeKind
+    End Select
+End Function
+
 ' The same bounded text pass is used by profile, prismatic and ordinary
 ' solid-part planners. Ownership and source measurements are never changed.
 Private Function LayoutMaterial(ByVal display As SldWorks.DisplayDimension, ByVal view As SldWorks.View) As Variant
@@ -202,10 +213,19 @@ End Function
 Private Function LayoutLinearDirection(ByVal display As SldWorks.DisplayDimension) As Variant
     Dim data As SldWorks.DisplayData, a As Variant, b As Variant, length As Double
     Set data = display.GetDisplayData
-    If data.GetArrowHeadCount <> DIMENSION_REFERENCE_SECOND Then
+    If data.GetArrowHeadCount = 0 Then
         Exit Function
     End If
     a = data.GetArrowHeadAtIndex2(0)
+    If data.GetArrowHeadCount = DIMENSION_REFERENCE_FIRST Then
+        ' A cropped or one-sided linear dimension still has a fixed measured
+        ' axis. It cannot be moved like the free leader of a circular size.
+        length = Sqr(a(DISPLAY_ARROW_DIRECTION_X) * a(DISPLAY_ARROW_DIRECTION_X) + a(DISPLAY_ARROW_DIRECTION_Y) * a(DISPLAY_ARROW_DIRECTION_Y))
+        If length > DIRECTION_ZERO_TOLERANCE Then
+            LayoutLinearDirection = Array(a(DISPLAY_ARROW_DIRECTION_X) / length, a(DISPLAY_ARROW_DIRECTION_Y) / length)
+        End If
+        Exit Function
+    End If
     b = data.GetArrowHeadAtIndex2(1)
     length = Sqr((b(0) - a(0)) ^ 2 + (b(1) - a(1)) ^ 2)
     If length > DIRECTION_ZERO_TOLERANCE Then

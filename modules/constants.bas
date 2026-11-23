@@ -3,6 +3,19 @@ Option Explicit
 
 ' Named constants: keep API codes, wire values and physical dimensions here.
 
+' Wall-clock budgets. Zero disables the corresponding limit.
+Private Const DEFAULT_JOB_TIMEOUT_SECONDS As Long = 300
+Private Const DEFAULT_LAYOUT_TIMEOUT_SECONDS As Long = 60
+Private Const MAX_EXECUTION_TIMEOUT_SECONDS As Long = 86400
+Private Const EXECUTION_POLL_INTERVAL As Long = 128
+Private Const MEMORY_STRICT_SEARCH_SECONDS As Long = 10
+Private Const MEMORY_NATIVE_LINEAR_ROWS As Long = 4
+Private Const MEMORY_NATIVE_LINEAR_TEXT_SHIFT_M As Double = 0.01
+Private Const MEMORY_NATIVE_CIRCULAR_DIRECTIONS As Long = 8
+Private Const ERR_EXECUTION_TIMEOUT As Long = 241
+Private Const EXECUTION_TIMEOUT_PREFIX As String = "TIMEOUT "
+Private Const TIMEOUT_JOBS_FILENAME As String = "timed-out-jobs.tsv"
+
 ' Shared in-memory dimension layout and template workspace (sheet coordinates, metres).
 Private Const DEFAULT_LAYOUT_ENGINE As String = "memory"
 Private Const MEMORY_LAYOUT_ENGINE As String = "memory"
@@ -98,6 +111,8 @@ Private Const SW_REMOVE_TRAILING_ZEROES As Long = 2
 Private Const SW_SOLID_LEADER_ALIGNED_TEXT As Long = 1
 Private Const SW_BROKEN_LEADER_HORIZONTAL_TEXT As Long = 2
 Private Const SW_DIMENSION_LINEAR As Long = 2
+Private Const SW_DIMENSION_HORIZONTAL_LINEAR As Long = 11
+Private Const SW_DIMENSION_VERTICAL_LINEAR As Long = 12
 Private Const SW_DIMENSION_RADIAL As Long = 5
 Private Const SW_DIMENSION_DIAMETER As Long = 6
 Private Const SW_AUTO_ARRANGE_DIMENSIONS As Long = 0

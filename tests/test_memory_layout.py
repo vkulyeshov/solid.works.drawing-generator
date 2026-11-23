@@ -38,10 +38,11 @@ class MemoryLayoutTests(unittest.TestCase):
         for name in ['WorkspaceFrame', 'WorkspaceInternalBox', 'WorkspaceTableBounds', 'MemoryWitnessFoot', 'MemoryAngularEndpoint',
                      'DetailReferenceLabel', 'MinD', 'MaxD', 'NativeBoundsInside', 'NativeBoxesOverlap',
                      'MemoryLinearTextCandidate', 'MemoryRebound', 'NativeExpandBounds', 'PlanarShiftPoint', 'PlanarGraphicLength',
-                     'MemorySolveCandidates', 'ReferenceOvalBounds', 'ReferenceLeaderLines']:
+                     'MemorySolveCandidates', 'ReferenceOvalBounds', 'ReferenceLeaderLines', 'SpatialClear', 'LayoutLinearDirection', 'MemoryCanSampleNatively', 'LayoutDimensionKind']:
             body = re.search(r'(?ms)^Private (?:Function|Sub) ' + name + r'\(.*?^End (?:Function|Sub)', source)[0]
             body = body.replace('Private ', '', 1)
-            body = body.replace(' As SldWorks.TableAnnotation', '')
+            body = re.sub(r' As SldWorks\.\w+', '', body)
+            body = body.replace('Mid$(', 'Mid(')
             body = body.replace(' As New Collection', '')
             body = re.sub(r' As (?:Collection|Object|Variant|String|Double|Long|Boolean)\b', '', body)
             body = re.sub(r'(?m)^(\s*)Next \w+\s*$', r'\1Next', body)
@@ -64,6 +65,7 @@ class MemoryLayoutTests(unittest.TestCase):
             routines.append(body)
         definitions = dict(re.findall(r'^Private Const (\w+) As \w+ = (.+)$', source, re.M))
         wanted = set(re.findall(r'\b[A-Z][A-Z_]+\b', '\n'.join(routines))) & definitions.keys()
+        wanted.add('SW_DIMENSION_ANGULAR')
         constants = ['Const ' + name + ' = ' + definitions[name] for name in sorted(wanted)]
         harness = '''
 Sub Check(ByVal condition, ByVal message)
@@ -71,8 +73,64 @@ Sub Check(ByVal condition, ByVal message)
         Err.Raise 1001, , message
     End If
 End Sub
+Sub CheckExecutionBudget()
+End Sub
+Function MemoryStrictSearchExpired()
+    MemoryStrictSearchExpired=False
+End Function
 Dim lines, frame, point, seed, text, bases, heads, candidate, planarSearchLimit
 Dim oval, leaders, source, anchor, shelf
+Class FakeArrowData
+    Public count, first, last
+    Function GetArrowHeadCount()
+        GetArrowHeadCount=count
+    End Function
+    Function GetArrowHeadAtIndex2(ByVal index)
+        GetArrowHeadAtIndex2=first
+        If index=1 Then
+            GetArrowHeadAtIndex2=last
+        End If
+    End Function
+End Class
+Class FakeLinearDisplay
+    Public data
+    Function GetDisplayData()
+        Set GetDisplayData=data
+    End Function
+End Class
+Dim arrowData, linearDisplay, measuredAxis
+Set arrowData=New FakeArrowData
+Set linearDisplay=New FakeLinearDisplay
+Set linearDisplay.data=arrowData
+arrowData.count=1
+arrowData.first=Array(0.04,0.16,0,-0.9396926208,-0.3420201433,0)
+measuredAxis=LayoutLinearDirection(linearDisplay)
+Check Abs(measuredAxis(0)+0.9396926208)<0.000000001,"A one-sided linear dimension lost its measured axis"
+Check Abs(measuredAxis(1)+0.3420201433)<0.000000001,"A one-sided linear dimension was treated as a circular leader"
+arrowData.count=2
+arrowData.first=Array(0.04,0.16,0,0,0,0)
+arrowData.last=Array(0.04,0.18,0,0,0,0)
+measuredAxis=LayoutLinearDirection(linearDisplay)
+Check Abs(measuredAxis(0))<0.000000001 And Abs(measuredAxis(1)-1)<0.000000001,"The two-arrow axis changed"
+arrowData.count=0
+Check IsEmpty(LayoutLinearDirection(linearDisplay)),"A dimension without arrows acquired an invented axis"
+Dim probeRecord
+Check LayoutDimensionKind(SW_DIMENSION_HORIZONTAL_LINEAR)=SW_DIMENSION_LINEAR,"An imported horizontal dimension entered circular routing"
+Check LayoutDimensionKind(SW_DIMENSION_VERTICAL_LINEAR)=SW_DIMENSION_LINEAR,"An imported vertical dimension entered circular routing"
+Check LayoutDimensionKind(SW_DIMENSION_DIAMETER)=SW_DIMENSION_DIAMETER,"A real diameter lost its type"
+Set probeRecord=CreateObject("Scripting.Dictionary")
+probeRecord.Add "type",SW_DIMENSION_LINEAR
+Check Not MemoryCanSampleNatively(probeRecord),"A missing linear axis was replaced with a circular leader"
+probeRecord.Add "direction",Array(1,0)
+Check MemoryCanSampleNatively(probeRecord),"An unstable linear annotation cannot be verified"
+probeRecord("type")=SW_DIMENSION_DIAMETER
+Check Not MemoryCanSampleNatively(probeRecord),"A circular annotation acquired an invented anchor"
+probeRecord.Add "anchor",Array(0.1,0.1)
+Check MemoryCanSampleNatively(probeRecord),"A reattaching diameter cannot be verified"
+probeRecord("type")=SW_DIMENSION_RADIAL
+Check MemoryCanSampleNatively(probeRecord),"A reattaching radius cannot be verified"
+probeRecord("type")=SW_DIMENSION_ANGULAR
+Check Not MemoryCanSampleNatively(probeRecord),"Angular sectors entered the circular sampling path"
 frame=Array(0.021,0.006,0.204,0.291)
 oval=ReferenceOvalBounds(Array(0.08,0.12,0.10,0.13),frame)
 Check NativeBoundsInside(oval,frame), "A source oval exceeded the actual drawing frame"
@@ -113,6 +171,23 @@ Check records(1)("candidates").Count=2, "A child search mutated its parent's can
 Set chosen = CreateObject("Scripting.Dictionary")
 steps=0: planarSearchLimit=2
 Check Not MemorySolveCandidates(records,chosen,steps) And chosen.Count=0, "A bounded failed search retained a partial assignment"
+Check steps<=planarSearchLimit+1, "Exhausted search continued through parent candidate domains"
+Set records=CreateObject("Scripting.Dictionary")
+For Each group In Array("x","y")
+    Set record=CreateObject("Scripting.Dictionary")
+    Set options=CreateObject("Scripting.Dictionary")
+    For index=1 To 3
+        Set candidate=CreateObject("Scripting.Dictionary")
+        candidate.Add "id",group & index
+        options.Add index,candidate
+    Next
+    record.Add "name",group: record.Add "candidates",options
+    records.Add records.Count+1,record
+Next
+Set chosen=CreateObject("Scripting.Dictionary")
+steps=0: planarSearchLimit=1
+Check Not MemorySolveCandidates(records,chosen,steps), "A search ignored its recursion budget"
+Check steps=2 And chosen.Count=0, "Parent branches kept scanning after a child exhausted the budget"
 Class FakeTable
     Public ColumnCount, RowCount, AnchorType
     Public Function GetAnnotation()

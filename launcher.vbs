@@ -6,6 +6,11 @@ Option Explicit
 Const HEARTBEAT_INTERVAL_SECONDS = 15
 Const PROGRESS_POLL_MILLISECONDS = 500
 Const SHUTDOWN_GRACE_SECONDS = 10
+Const DEFAULT_JOB_TIMEOUT_SECONDS = 300
+Const DEFAULT_STARTUP_TIMEOUT_SECONDS = 180
+Const MAX_EXECUTION_TIMEOUT_SECONDS = 86400
+Const TIMEOUT_JOBS_FILENAME = "timed-out-jobs.tsv"
+Const EXECUTION_TIMEOUT_PREFIX = "TIMEOUT "
 
 ' API values and serialized field indices
 Const MAX_POSITIONAL_ARGUMENTS = 3
@@ -122,6 +127,7 @@ Dim backgroundMode, backgroundVerified, backgroundPID
 Dim existingPIDAtStart, existingAliveAtEnd
 Dim paperFormat, paperOrientation, drawingTemplate, templatesDirectory
 Dim excludeSuppressed
+Dim jobTimeoutSeconds, startupTimeoutSeconds, monitoredJob, monitoredJobStarted, monitorIdleStarted
 
 Sub Main()
     Set fso = CreateObject("Scripting.FileSystemObject")
@@ -178,7 +184,7 @@ End Sub
 
 Sub ControllerMain()
     Dim key, positional, content, context, child, command, buildReport
-    Dim lastHeartbeat, result, available
+    Dim lastHeartbeat, result, available, workerTimedOut
     currentStage = "arguments"
     If named.Exists("help") Or named.Exists("?") Then
         Usage
@@ -251,6 +257,12 @@ Sub ControllerMain()
     content = ReadIniText(iniFile)
     ResolveDrawingSettings content
     excludeSuppressed = ResolveSuppressionFilter(content)
+    jobTimeoutSeconds = TimeoutSetting(content, "JobTimeoutSeconds", DEFAULT_JOB_TIMEOUT_SECONDS)
+    startupTimeoutSeconds = TimeoutSetting(content, "StartupTimeoutSeconds", DEFAULT_STARTUP_TIMEOUT_SECONDS)
+    ' A hard COM timeout must never terminate an interactive user session.
+    If jobTimeoutSeconds > 0 Or startupTimeoutSeconds > 0 Then
+        backgroundMode = True
+    End If
     currentStage = "session setup"
     lockFile = fso.BuildPath(fso.GetSpecialFolder(SPECIAL_FOLDER_TEMP), SHARED_LOCK_FILENAME)
     AcquireLock
@@ -277,6 +289,9 @@ Sub ControllerMain()
     If named.Exists("reset") Then
         If fso.FileExists(fso.BuildPath(outputDir, CHECKPOINT_FILENAME)) Then
             fso.DeleteFile fso.BuildPath(outputDir, CHECKPOINT_FILENAME), True
+        End If
+        If fso.FileExists(fso.BuildPath(outputDir, TIMEOUT_JOBS_FILENAME)) Then
+            fso.DeleteFile fso.BuildPath(outputDir, TIMEOUT_JOBS_FILENAME), True
         End If
     End If
     ' The last occurrence of each key wins in the VBA INI reader.
@@ -310,6 +325,7 @@ Sub ControllerMain()
     Say "INI:   " & iniFile
     Say "Paper: " & paperFormat & "; template: " & drawingTemplate
     Say "Exclude suppressed: " & excludeSuppressed
+    Say "Timeouts: job=" & jobTimeoutSeconds & "s; startup/cleanup=" & startupTimeoutSeconds & "s"
     If backgroundMode Then
         Say "Mode: background (separate SolidWorks instance)"
     End If
@@ -334,12 +350,18 @@ Sub ControllerMain()
             fso.DeleteFile fso.BuildPath(sessionDir, BACKGROUND_STATE_FILENAME), True
         End If
         Set child = shell.Exec(command)
+        workerTimedOut = False
+        monitoredJob = "": monitorIdleStarted = Now
         Do
             PollProgress
             If backgroundMode Then
                 FinishLingeringBackground
             End If
             If child.Status <> SHELL_PROCESS_RUNNING Then
+                Exit Do
+            End If
+            If MonitorWorkerTimeout(child) Then
+                workerTimedOut = True
                 Exit Do
             End If
             If DateDiff("s", lastHeartbeat, Now) >= HEARTBEAT_INTERVAL_SECONDS Then
@@ -349,13 +371,17 @@ Sub ControllerMain()
             WScript.Sleep PROGRESS_POLL_MILLISECONDS
         Loop
         PollProgress
-        available = child.StdOut.ReadAll
-        If Len(Trim(available)) > 0 Then
-            Say Trim(available)
-        End If
-        available = child.StdErr.ReadAll
-        If Len(Trim(available)) > 0 Then
-            Say Trim(available)
+        ' A native child can retain inherited pipe handles after the worker
+        ' is terminated. Reading them to EOF would defeat the watchdog.
+        If Not workerTimedOut Then
+            available = child.StdOut.ReadAll
+            If Len(Trim(available)) > 0 Then
+                Say Trim(available)
+            End If
+            available = child.StdErr.ReadAll
+            If Len(Trim(available)) > 0 Then
+                Say Trim(available)
+            End If
         End If
         Set result = ReadKeyValues(fso.BuildPath(sessionDir, WORKER_RESULT_FILENAME))
         exitCode = EXIT_LAUNCHER_FAILURE
@@ -365,8 +391,10 @@ Sub ControllerMain()
         Else
             Say "ERROR: worker ended without a result; process exit code=" & child.ExitCode
         End If
-        If child.ExitCode <> 0 And exitCode = EXIT_SUCCESS Then
-            exitCode = child.ExitCode
+        If Not workerTimedOut Then
+            If child.ExitCode <> 0 And exitCode = EXIT_SUCCESS Then
+                exitCode = child.ExitCode
+            End If
         End If
         If lastState <> STATE_COMPLETE And exitCode = EXIT_SUCCESS Then
             exitCode = EXIT_GENERATION_FAILURE
@@ -400,6 +428,82 @@ Sub ControllerMain()
     End If
     Say "Exit code: " & exitCode
 End Sub
+
+Function TimeoutSetting(ByVal content, ByVal key, ByVal fallback)
+    Dim value, number
+    value = IniSetting(content, key, CStr(fallback))
+    If Not IsNumeric(value) Then
+        Err.Raise vbObjectError + ERR_ARGUMENTS, , key & " must be an integer from 0 to 86400."
+    End If
+    number = CDbl(value)
+    If number < 0 Or number > MAX_EXECUTION_TIMEOUT_SECONDS Or number <> Fix(number) Then
+        Err.Raise vbObjectError + ERR_ARGUMENTS, , key & " must be an integer from 0 to 86400."
+    End If
+    TimeoutSetting = CLng(number)
+End Function
+
+Sub TrackJobBudget(ByVal message)
+    If Left(message, Len("JOB ")) = "JOB " Then
+        monitoredJob = Mid(message, Len("JOB ") + 1)
+        monitoredJobStarted = Now
+    ElseIf Left(message, Len("OK ")) = "OK " Or Left(message, Len("FAIL ")) = "FAIL " Then
+        monitoredJob = ""
+        monitorIdleStarted = Now
+    End If
+End Sub
+
+Function TerminateTimedOutBackground()
+    Dim service, processes, process
+    TerminateTimedOutBackground = False
+    Set service = GetObject("winmgmts:\\.\root\cimv2")
+    Set processes = service.ExecQuery("Select * from Win32_Process Where Name='SLDWORKS.exe'")
+    For Each process In processes
+        If Not IsNull(process.CommandLine) Then
+            If InStr(1, process.CommandLine, runtimeMacro, vbTextCompare) > 0 Then
+                If process.Terminate(EXIT_LAUNCHER_FAILURE) = 0 Then
+                    TerminateTimedOutBackground = True
+                    Say "Terminated timed-out dedicated SolidWorks PID=" & process.ProcessId
+                End If
+            End If
+        End If
+    Next
+End Function
+
+Function MonitorWorkerTimeout(ByVal child)
+    Dim expired, message, stream, stopped, resultCode
+    expired = False
+    If Len(monitoredJob) > 0 Then
+        If jobTimeoutSeconds > 0 Then
+            expired = (DateDiff("s", monitoredJobStarted, Now) >= jobTimeoutSeconds + SHUTDOWN_GRACE_SECONDS)
+            message = EXECUTION_TIMEOUT_PREFIX & "job exceeded " & jobTimeoutSeconds & " seconds: " & monitoredJob
+        End If
+    ElseIf startupTimeoutSeconds > 0 Then
+        expired = (DateDiff("s", monitorIdleStarted, Now) >= startupTimeoutSeconds)
+        message = EXECUTION_TIMEOUT_PREFIX & "startup or batch cleanup exceeded " & startupTimeoutSeconds & " seconds"
+    End If
+    If Not expired Then
+        Exit Function
+    End If
+    Say message
+    stopped = False
+    If backgroundMode Then
+        stopped = TerminateTimedOutBackground()
+    End If
+    If child.Status = SHELL_PROCESS_RUNNING Then
+        child.Terminate
+    End If
+    resultCode = EXIT_GENERATION_FAILURE
+    If stopped And Len(monitoredJob) > 0 Then
+        ' The CAD process is dead before this durable marker is written.
+        ' VBA imports it on resume and commits its own atomic checkpoint.
+        Set stream = fso.OpenTextFile(fso.BuildPath(outputDir, TIMEOUT_JOBS_FILENAME), FILE_FOR_APPENDING, True, FILE_UNICODE)
+        stream.WriteLine monitoredJob & vbTab & CleanLine(message)
+        stream.Close
+        resultCode = EXIT_BATCH_PAUSED
+    End If
+    WriteWorkerResult resultCode, message
+    MonitorWorkerTimeout = True
+End Function
 
 Sub ResolveDrawingSettings(ByVal content)
     Dim iniDirectory, configuredTemplate, configuredDirectory
@@ -736,6 +840,7 @@ Sub PollProgress()
                 outputDir = fields(PROGRESS_OUTPUT_FIELD)
             End If
             lastMessage = fields(PROGRESS_MESSAGE_FIELD)
+            TrackJobBudget lastMessage
             percentage = "--"
             If lastTotal > 0 Then
                 percentage = Fix(PERCENT_COMPLETE * lastDone / lastTotal)

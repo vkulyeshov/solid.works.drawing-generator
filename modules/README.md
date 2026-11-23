@@ -14,6 +14,7 @@ Every BAS file must be listed exactly once, with a matching `VB_Name` header and
 | `constants.bas` | API identifiers, settings defaults, geometry and layout constants |
 | `platform.bas` | Windows API declarations and window bounds type |
 | `state.bas` | Shared runtime and drawing state |
+| `execution_budget.bas` | Job and layout wall-clock limits, bounded strict search, and durable timeout recovery |
 | `background.bas` | Background SolidWorks windows and shutdown |
 | `snapshots.bas` | Pack and Go targets, source restoration, backup cleanup |
 | `inventory.bas` | Assembly traversal, bodies, quantities, drawing jobs |
@@ -42,6 +43,7 @@ Every BAS file must be listed exactly once, with a matching `VB_Name` header and
 | `planar_drawing.bas` | Native aligned lengths, inclined angles, shared hole sizes and single-view ownership |
 | `planar_routing.bas` | Outward dimension bases and crossing-aware placement for inclined planar edges |
 | `planar_layout.bas` | Joint native candidate placement, rotated text and arc geometry, backtracking and compactness improvement |
+| `spatial_bounds.bas` | Cached component bounds and conservative rejection before exact text, leader, baseline and arrow tests |
 | `sheet_workspace.bas` | Actual frame geometry, connected occupied format blocks and sheet/view notes |
 | `memory_geometry.bas` | Offline linear, angular and leader geometry, fixed witness feet and collision predicates |
 | `memory_layout.bas` | Shared in-memory assignment, batched native application and bounded graphic verification |

@@ -109,10 +109,19 @@ class BuildTests(unittest.TestCase):
             self.assertTrue((package / 'bin.zip').is_file())
 
     def test_default_build_uses_ignored_repository_directory(self):
-        self.invoke(REPOSITORY / 'build.vbs', cwd=self.root)
-        self.assertTrue((BUILD_DIRECTORY / 'bin/launcher.vbs').is_file())
-        self.assertTrue((BUILD_DIRECTORY / 'bin.zip').is_file())
-        self.assertTrue((BUILD_DIRECTORY / 'generator.build.json').is_file())
+        # Test default path resolution in a disposable checkout. A real build
+        # here would overwrite the user's runtime INI and release artifacts.
+        with tempfile.TemporaryDirectory(prefix='default_build_', dir=self.root) as temporary:
+            checkout = Path(temporary)
+            for directory in ['modules', 'tools', 'templates']:
+                shutil.copytree(REPOSITORY / directory, checkout / directory,
+                                ignore=shutil.ignore_patterns('__pycache__'))
+            for name in ['build.vbs', 'launcher.vbs', 'generator.ini', 'GENERATOR.md']:
+                shutil.copy2(REPOSITORY / name, checkout / name)
+            self.invoke(checkout / 'build.vbs', cwd=self.root)
+            self.assertTrue((checkout / 'build/bin/launcher.vbs').is_file())
+            self.assertTrue((checkout / 'build/bin.zip').is_file())
+            self.assertTrue((checkout / 'build/generator.build.json').is_file())
         ignored = subprocess.run(['git', 'check-ignore', '--quiet', '--', 'build/bin/README.md'],
                                  cwd=REPOSITORY)
         self.assertEqual(ignored.returncode, 0)

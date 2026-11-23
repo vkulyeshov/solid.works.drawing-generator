@@ -148,15 +148,7 @@ Private Function PlanarPolygonsOverlap(ByVal a As Variant, ByVal b As Variant) A
 End Function
 
 Private Function PlanarLinesHitText(ByVal lines As Collection, ByVal polygons As Collection) As Boolean
-    Dim segment As Variant, polygon As Variant
-    For Each segment In lines
-        For Each polygon In polygons
-            If ProfileLineCutsMaterial(Array(segment(0), segment(1)), Array(segment(2), segment(3)), Array(polygon)) Then
-                PlanarLinesHitText = True
-                Exit Function
-            End If
-        Next polygon
-    Next segment
+    PlanarLinesHitText = SpatialLinesHitText(lines, polygons, SpatialLineBoxes(lines), SpatialPolygonBoxes(polygons))
 End Function
 
 Private Function PlanarGraphicLength(ByVal lines As Collection) As Double
@@ -334,7 +326,7 @@ Private Function PlanarDimensionBases(ByVal display As SldWorks.DisplayDimension
     Dim segment As Variant, dx As Double, dy As Double, length As Double
     Set data = display.GetDisplayData
     Set lines = PlanarDisplayLines(data)
-    If display.Type2 = SW_DIMENSION_LINEAR And data.GetArrowHeadCount = 2 Then
+    If LayoutDimensionKind(display.Type2) = SW_DIMENSION_LINEAR And data.GetArrowHeadCount = DIMENSION_REFERENCE_SECOND Then
         first = data.GetArrowHeadAtIndex2(0)
         last = data.GetArrowHeadAtIndex2(1)
         result.Add Array(first(0), first(1), last(0), last(1))
@@ -654,6 +646,7 @@ Private Function PlanarTranslateCandidate(ByVal template As Object, ByVal first 
     Next polygon
     result.Add "bounds", bounds
     result.Add "cost", CDbl(template("cost")) - PlanarGraphicLength(template("lines")) + PlanarGraphicLength(result("lines"))
+    SpatialClear result
     Set PlanarTranslateCandidate = result
 End Function
 
@@ -1098,54 +1091,13 @@ PlanarCandidatesReady:
 End Function
 
 Private Function PlanarCandidatesCompatible(ByVal first As Object, ByVal last As Object) As Boolean
-    Dim a As Variant, b As Variant, firstText As Collection, lastText As Collection, bases As Collection, lines As Collection
     ' Bounds contain every line, arrowhead and printed text box; separated
     ' bounds cannot produce any of the conflicts below.
     If Not NativeBoxesOverlap(first("bounds"), last("bounds"), PLANAR_COMPATIBILITY_CLEARANCE_M) Then
         PlanarCandidatesCompatible = True
         Exit Function
     End If
-    Set firstText = first("text")
-    Set lastText = last("text")
-    For Each a In firstText
-        For Each b In lastText
-            If PlanarPolygonsOverlap(a, b) Then
-                Exit Function
-            End If
-        Next b
-    Next a
-    If PlanarLinesHitText(first("lines"), lastText) Or PlanarLinesHitText(last("lines"), firstText) Then
-        Exit Function
-    End If
-    Set bases = first("bases")
-    Set lines = last("bases")
-    For Each a In bases
-        For Each b In lines
-            If PlanarDimensionLineConflict(a, b) Then
-                Exit Function
-            End If
-        Next b
-    Next a
-    Set bases = last("bases")
-    Set lines = first("bases")
-    For Each a In bases
-        For Each b In lines
-            If PlanarDimensionLineConflict(a, b) Then
-                Exit Function
-            End If
-        Next b
-    Next a
-    ' DSTU GOST 2.307: a dimension line must not cross the extension, leader or
-    ' dimension lines of another dimension.
-    If planarStrictCrossings Then
-        If PlanarBasesCrossLines(first("bases"), last("lines")) Or PlanarBasesCrossLines(last("bases"), first("lines")) Then
-            Exit Function
-        End If
-    End If
-    If PlanarHeadsOverlap(first("heads"), last("heads")) Then
-        Exit Function
-    End If
-    PlanarCandidatesCompatible = True
+    PlanarCandidatesCompatible = SpatialCandidatesCompatible(first, last)
 End Function
 
 Private Function PlanarBasesCrossLines(ByVal bases As Collection, ByVal lines As Collection) As Boolean
@@ -1211,6 +1163,7 @@ End Function
 ' Candidate IDs are scoped to one view solve; no geometry is cached across jobs.
 Private Function PlanarCandidatesCompatibleCached(ByVal first As Object, ByVal last As Object) As Boolean
     Dim key As String, reverseKey As String, result As Boolean
+    PollExecutionBudget
     key = first("id") & vbTab & last("id")
     If planarLayoutCompatibility.Exists(key) Then
         PlanarCandidatesCompatibleCached = CBool(planarLayoutCompatibility(key))
@@ -1227,6 +1180,7 @@ End Function
 Private Function SolvePlanarCandidates(ByVal remaining As Collection, ByVal chosen As Collection, ByRef steps As Long) As Boolean
     Dim record As Object, candidate As Object, existing As Object, available As Collection, options As Collection
     Dim best As Object, bestOptions As Collection, nextRemaining As Collection, compatible As Boolean
+    CheckExecutionBudget
     steps = steps + 1
     If steps > planarSearchLimit Then
         Exit Function
@@ -1268,6 +1222,9 @@ Private Function SolvePlanarCandidates(ByVal remaining As Collection, ByVal chos
         End If
     Next record
     For Each candidate In bestOptions
+        If steps > planarSearchLimit Then
+            Exit Function
+        End If
         chosen.Add candidate
         If SolvePlanarCandidates(nextRemaining, chosen, steps) Then
             SolvePlanarCandidates = True
@@ -1390,6 +1347,7 @@ Private Sub FinishPlanarDimensionLayout(ByVal d As SldWorks.ModelDoc2, ByVal vie
     For Each item In views
         Set view = item
         ReDim rawPolygon(planarContourPoints.Count - 1)
+        BeginLayoutBudget view.Name
         For index = 1 To planarContourPoints.Count
             rawPolygon(index - 1) = PatternSheetPoint(view, planarContourPoints(index))
         Next index
@@ -1592,6 +1550,7 @@ PlanarModelMismatch:
         Set planarCandidateResume = CreateObject("Scripting.Dictionary")
         GoTo BuildPlanarViewCandidates
 NextPlanarLayoutView:
+        EndLayoutBudget
     Next item
     Set planarCandidateResume = Nothing
     Log "NATIVE LEADERS dimensions=" & count & "; complete planar graphics and text checked together"

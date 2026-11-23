@@ -5,7 +5,8 @@ param([Parameter(Mandatory=$true)][string]$WorkDirectory,
       [switch]$RemapInputReferences,
       [switch]$ProfileGeometryOnly,
       [switch]$InspectOnly,
-      [ValidateRange(60,3600)][int]$MacroTimeoutSeconds = 480)
+      [ValidateRange(60,3600)][int]$MacroTimeoutSeconds = 480,
+      [string]$ModelConfiguration = '')
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'TestPaths.ps1')
 $work = Get-ExternalTestPath $WorkDirectory
@@ -26,12 +27,14 @@ using SolidWorks.Interop.sldworks;
 public static class SixViewGenerationTest {
     const int PartDocument=1, AssemblyDocument=2, DrawingDocument=3, SilentReadOnly=3, OffscreenOffset=1024;
     const int SolidBody=0;
+    const int SilentOpen=1, SilentSave=1;
     const int CalloutAbove=3, CalloutAboveDefinition=7, CalloutBelowDefinition=8;
     const int VirtualLeft=76, VirtualTop=77, VirtualWidth=78, VirtualHeight=79;
     const int InventoryTimeoutMilliseconds=900000;
     const int StartupTimeoutMilliseconds=120000, StartupPollMilliseconds=250;
     const int ShutdownGraceMilliseconds=5000;
     const int KeepMacroLoaded=0;
+    const string ExecutionTimingsFile="execution-timings.tsv";
     static Process ownedProcess;
     [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
     [DllImport("ole32.dll")] static extern int CreateBindCtx(int reserved,out IBindCtx context);
@@ -57,6 +60,12 @@ public static class SixViewGenerationTest {
                 } catch(COMException) { }
                 finally { Marshal.ReleaseComObject(entry[0]); }
             }
+            // Some installations omit the PID moniker. The generic ROT entry
+            // is safe only after verifying it belongs to our new process.
+            try {
+                var active=Marshal.GetActiveObject("SldWorks.Application") as SldWorks;
+                if(active!=null && active.GetProcessID()==pid) return active;
+            } catch(COMException) { }
             return null;
         } finally {
             if(iterator!=null) Marshal.ReleaseComObject(iterator);
@@ -83,9 +92,13 @@ public static class SixViewGenerationTest {
             if(application!=null) return application;
             System.Threading.Thread.Sleep(StartupPollMilliseconds);
         }
+        if(!process.HasExited) process.Kill();
         throw new Exception("Dedicated SolidWorks did not register its PID-specific application object.");
     }
     static string Number(double value) { return value.ToString("R",CultureInfo.InvariantCulture); }
+    static void ExecutionTiming(string work,string stage,Stopwatch timer) {
+        File.AppendAllText(Path.Combine(work,ExecutionTimingsFile),stage+"\t"+Number(timer.Elapsed.TotalSeconds)+System.Environment.NewLine,Encoding.Unicode);
+    }
     static string Clean(string value) { return value.Replace("\t"," ").Replace("\r"," ").Replace("\n"," "); }
     static void RemapCopiedReferences(SldWorks sw,string work,string folder,string rootName) {
         string models=Path.Combine(work,folder);
@@ -270,13 +283,17 @@ public static class SixViewGenerationTest {
         result.Append("]}");
         File.WriteAllText(Path.Combine(work,"profile-geometry.json"),result.ToString(),Encoding.UTF8);
     }
-    public static void Run(string work,string modelFileName,bool inventoryOnly,bool remapReferences,bool profileGeometryOnly,int macroTimeoutMilliseconds,bool inspectOnly,bool remapInputReferences) {
+    public static void Run(string work,string modelFileName,bool inventoryOnly,bool remapReferences,bool profileGeometryOnly,int macroTimeoutMilliseconds,bool inspectOnly,bool remapInputReferences,string modelConfiguration) {
         if(inspectOnly && (inventoryOnly || remapReferences || profileGeometryOnly || remapInputReferences))
             throw new ArgumentException("InspectOnly requires a generated single-part fixture.");
         var prior=new HashSet<int>();
         foreach(Process process in Process.GetProcessesByName("SLDWORKS")) prior.Add(process.Id);
         Console.WriteLine("Starting an isolated SolidWorks process");
+        File.WriteAllText(Path.Combine(work,ExecutionTimingsFile),"stage\tseconds"+System.Environment.NewLine,Encoding.Unicode);
+        var totalTimer=Stopwatch.StartNew();
+        var stageTimer=Stopwatch.StartNew();
         SldWorks sw=StartApplication();
+        ExecutionTiming(work,"application-start",stageTimer);
         int pid=sw.GetProcessID();
         if(prior.Contains(pid)) throw new Exception("The test must own its SolidWorks process.");
         Console.WriteLine("Six-view test owns SolidWorks PID="+pid);
@@ -295,14 +312,32 @@ public static class SixViewGenerationTest {
                 RemapCopiedReferences(sw,work,"input",modelFileName);
             }
             string input=Path.Combine(work,inventoryOnly ? "Models" : "input",modelFileName);
+            stageTimer.Restart();
             sw.SetCurrentWorkingDirectory(Path.GetDirectoryName(input));
             int error=0,warning=0;
             int documentType=modelFileName.EndsWith(".sldasm",StringComparison.OrdinalIgnoreCase) ? AssemblyDocument : PartDocument;
+            if(!string.IsNullOrWhiteSpace(modelConfiguration)) {
+                // Configuration selection is persisted only in our disposable
+                // input copy, before the normal read-only generation session.
+                var configured=(ModelDoc2)sw.OpenDoc6(input,documentType,SilentOpen,modelConfiguration,ref error,ref warning);
+                if(configured==null) throw new Exception("Cannot open copied input configuration: "+error+"; "+modelConfiguration);
+                if(!string.Equals(configured.GetPathName(),input,StringComparison.OrdinalIgnoreCase))
+                    throw new Exception("Configuration selection did not open the disposable input copy.");
+                if(configured.ConfigurationManager.ActiveConfiguration.Name!=modelConfiguration)
+                    configured.ShowConfiguration2(modelConfiguration);
+                if(configured.ConfigurationManager.ActiveConfiguration.Name!=modelConfiguration)
+                    throw new Exception("Cannot select copied input configuration: "+modelConfiguration+
+                        "; available="+string.Join(" | ",(string[])configured.GetConfigurationNames()));
+                if(!configured.Save3(SilentSave,ref error,ref warning))
+                    throw new Exception("Cannot save copied input configuration: "+error);
+                sw.CloseDoc(configured.GetTitle());
+            }
             ModelDoc2 model=sw.OpenDoc6(input,documentType,SilentReadOnly,"",ref error,ref warning);
             if(model==null) throw new Exception("Cannot open the copied test model: "+error);
             var active=(ModelDoc2)sw.ActivateDoc3(Path.GetFileName(input),false,0,ref error);
             if(active==null || !string.Equals(active.GetPathName(),input,StringComparison.OrdinalIgnoreCase))
                 throw new Exception("The copied test model did not become active.");
+            ExecutionTiming(work,"input-open",stageTimer);
             if(inspectOnly) {
                 InspectResult(sw,work);
                 Console.WriteLine("Persisted drawing inspection completed: "+Path.Combine(work,"output"));
@@ -316,6 +351,7 @@ public static class SixViewGenerationTest {
             // Each invocation must validate its own events, including fixture retries.
             File.WriteAllText(Path.Combine(work,"progress.tsv"),string.Empty,Encoding.Unicode);
             Console.WriteLine(inventoryOnly ? "Running copied saved-reference inventory" : "Running the canonical six-view generator");
+            stageTimer.Restart();
             using(var watchdog=new System.Threading.Timer(delegate(object unused) {
                 try { if(ownedProcess!=null && !ownedProcess.HasExited) ownedProcess.Kill(); } catch(ArgumentException) { }
             },null,inventoryOnly ? InventoryTimeoutMilliseconds : macroTimeoutMilliseconds,System.Threading.Timeout.Infinite)) {
@@ -323,18 +359,26 @@ public static class SixViewGenerationTest {
                 if(!sw.RunMacro2(Path.Combine(work,"generator.swp"),"Macro11",inventoryOnly ? "InspectInventory" : "main",KeepMacroLoaded,out macroError))
                     throw new Exception("RunMacro2 returned false; native macro error="+macroError);
             }
+            ExecutionTiming(work,"macro",stageTimer);
             string events=File.ReadAllText(Path.Combine(work,"progress.tsv"),System.Text.Encoding.Unicode);
             if(!events.Contains("\tCOMPLETE\t")) {
                 if(File.Exists(Path.Combine(work,"output","diagnostic-failed.pdf"))) InspectResult(sw,work);
                 throw new Exception("Generation did not complete. Read progress.tsv and output/run.log.");
             }
-            if(!inventoryOnly) InspectResult(sw,work);
+            if(!inventoryOnly) {
+                stageTimer.Restart();
+                InspectResult(sw,work);
+                ExecutionTiming(work,"test-inspection",stageTimer);
+            }
             Console.WriteLine("Six-view generation completed: "+Path.Combine(work,"output"));
         } finally {
+            stageTimer.Restart();
             FinishTestProcess(sw,work);
+            ExecutionTiming(work,"test-shutdown",stageTimer);
+            ExecutionTiming(work,"test-total",totalTimer);
         }
     }
 }
 '@
 Add-Type -TypeDefinition $source -ReferencedAssemblies $api
-[SixViewGenerationTest]::Run($work,$ModelFileName,$InventoryOnly.IsPresent,$RemapInventoryReferences.IsPresent,$ProfileGeometryOnly.IsPresent,[int][TimeSpan]::FromSeconds($MacroTimeoutSeconds).TotalMilliseconds,$InspectOnly.IsPresent,$RemapInputReferences.IsPresent)
+[SixViewGenerationTest]::Run($work,$ModelFileName,$InventoryOnly.IsPresent,$RemapInventoryReferences.IsPresent,$ProfileGeometryOnly.IsPresent,[int][TimeSpan]::FromSeconds($MacroTimeoutSeconds).TotalMilliseconds,$InspectOnly.IsPresent,$RemapInputReferences.IsPresent,$ModelConfiguration)

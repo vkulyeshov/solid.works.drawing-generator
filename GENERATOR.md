@@ -66,7 +66,13 @@ The supplied INI selects A4 portrait. If the paper settings are absent, the fall
 
 ## Generation settings
 
-`LayoutEngine=memory` is the default for all drawing types. Dimension sources and geometric deduplication remain unchanged; placement is calculated from a cached native snapshot without moving annotations through trial positions in SolidWorks. The engine applies a complete sheet assignment together and checks the actual native result. It rejects unresolved text, arrow and view collisions rather than exporting an unchecked placement. Native dimensions remain associated with their model references.
+`LayoutEngine=memory` is the default for all drawing types. Dimension sources and geometric deduplication remain unchanged; placement is normally calculated from a cached native snapshot. Linear and circular dimensions that fail geometric prediction use a bounded set of native samples, retaining the exact requested control points. This handles one-sided linear anchors and circular leaders that SolidWorks reattaches when moved. The engine applies a complete sheet assignment together and checks the actual native result. It rejects unresolved text, arrow and view collisions rather than exporting an unchecked placement. Native dimensions remain associated with their model references.
+
+The collision engine caches bounds for individual text fragments, line segments
+and arrowheads. Definitely separated bounds skip exact geometry work; touching
+and tolerance-sized gaps still use the original predicates. Moving or rebuilding
+a candidate invalidates its cached bounds. Search limits and collision rules
+are unchanged by this optimization.
 
 Each active sheet supplies its own frame, internal format blocks, notes and tables. Binding-strip graphics outside the inner frame do not reserve a large rectangle inside the drawing. Dimensions can share otherwise free space between views; actual material and neighbouring view geometry remain protected. `sheet-workspace.tsv` records the frame and occupied rectangles; `memory-layout.tsv` records verified dimension bounds. Source areas use black continuous thin circles or ovals. Matching Ukrainian letters appear in 5 mm text on leader shelves and in enlarged-view captions. Reference letters and their leaders are solved together with dimensions. `reference-graphics.tsv` records the verified leader endpoints.
 
@@ -89,6 +95,10 @@ Edit `generator.ini` to adjust generation:
 | `UpAxis=+Y` | Model up direction; also accepts `-Y`, `+X`, `-X`, `+Z`, or `-Z` |
 | `JobsPerBatch=8` | Maximum job attempts per batch; `0` disables the limit |
 | `MaxJobAttempts=3` | Persistent total attempt limit per drawing job |
+| `JobTimeoutSeconds=300` | Wall-clock limit per job attempt. VBA checks between stages and inside searches; the launcher interrupts a blocked dedicated SolidWorks process after a 10-second cleanup grace period. |
+| `LayoutTimeoutSeconds=60` | Shared wall-clock limit for candidate generation, search and repair of one sheet in the memory engine; the legacy engine applies it per view. |
+| `StartupTimeoutSeconds=180` | Launcher limit for model startup, snapshot preparation and cleanup between jobs. |
+| `RetryTimedOutJobs=0` | Do not repeat timed-out jobs automatically. Set `1` deliberately when retrying them with adjusted limits, subject to `MaxJobAttempts`. |
 | `MaxJobs=0` | Select all jobs; a positive value limits a new queue |
 | `JobFilter=` | Optional path or body-name substring for selecting jobs |
 | `ExcludeSuppressed=0` | Suppression filter off by default. Set `1` to skip suppressed component occurrences and their descendants. `/excludesuppressed:0|1` overrides this setting. |
@@ -178,6 +188,14 @@ The launcher automatically continues between batches and after drawing errors or
 If the launcher itself was closed or Windows restarted, repeat the same command with the same `/out`, INI, and template path. Use a new output folder when changing paper format, template, or rendering settings.
 
 Pending jobs run before deferred retries of failed jobs. Once a job reaches `MaxJobAttempts`, it remains in `failed-jobs.tsv` and other jobs continue. After fixing its cause, increase `MaxJobAttempts` and repeat the command without `/reset` to retry it while preserving valid completed drawings.
+
+Time limits are enabled by default even when omitted from an older INI. A positive job or startup limit makes the launcher use a separate background SolidWorks process, so its watchdog never terminates an interactive user session. Set a limit to `0` to disable it; both launcher limits must be zero to restore the previous foreground behavior unless `/background` is specified. These limits do not invalidate completed drawings in the checkpoint.
+
+On timeout, the job fails with a `TIMEOUT` reason and later jobs continue. A blocked COM call is interrupted only in the dedicated process whose command line contains this run's unique macro path. The launcher records killed jobs in `timed-out-jobs.tsv`; VBA imports these markers on resume and updates its atomic checkpoint. Timed-out jobs are excluded from automatic retries by default. To retry them while keeping completed drawings, adjust the relevant limit and set `RetryTimedOutJobs=1`; raise `MaxJobAttempts` if necessary. `/reset` also clears timeout markers.
+
+The memory engine spends at most 10 seconds on its stricter search before trying the existing rules that permit extension-line crossings. The sheet deadline includes both searches and repairs. Text, arrow and material collision checks remain enabled. Linear dimensions retain their measured axis. An unstable linear, diameter or radius annotation switches to bounded native samples when it has no valid prediction or its final native graphics collide; the same solver selects and verifies the resulting positions.
+
+Imported horizontal and vertical linear API types are normalized to linear layout geometry. Source annotation text is retained. Some imported Toolbox dimensions return incomplete text through `GetDisplayData` after reopening; inspect the exported PDF before diagnosing a missing printed value.
 
 To regenerate the entire queue, add `/reset` or delete `generation-state.tsv`. Matching artifact filenames can then be overwritten; unrelated files are retained. Only one launcher can generate drawings at a time.
 

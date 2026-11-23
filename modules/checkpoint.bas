@@ -148,6 +148,7 @@ Private Sub LoadCheckpoint()
     If jobs.Count = 0 Then
         Err.Raise vbObjectError + ERR_CHECKPOINT_INVALID, , "Checkpoint has no jobs."
     End If
+    ApplyJobTimeoutMarkers
     RecountJobResults
 End Sub
 
@@ -169,7 +170,7 @@ Private Function HasPendingJobs() As Boolean
     Dim key As Variant, job As Object
     For Each key In jobs.Keys
         Set job = jobs(key)
-        If job("status") = STATE_PENDING And CLng(job("attempts")) < maxJobAttempts Then
+        If job("status") = STATE_PENDING And CLng(job("attempts")) < maxJobAttempts And Not JobTimedOut(job) Then
             HasPendingJobs = True
             Exit Function
         End If
@@ -180,7 +181,7 @@ Private Function HasRunnableJobs() As Boolean
     Dim key As Variant, job As Object
     For Each key In jobs.Keys
         Set job = jobs(key)
-        If job("status") <> STATE_DONE And CLng(job("attempts")) < maxJobAttempts Then
+        If job("status") <> STATE_DONE And CLng(job("attempts")) < maxJobAttempts And Not JobTimedOut(job) Then
             HasRunnableJobs = True
             Exit Function
         End If
@@ -188,7 +189,7 @@ Private Function HasRunnableJobs() As Boolean
 End Function
 
 Private Function JobEligible(ByVal job As Object, ByVal retryBatch As Boolean) As Boolean
-    If job("status") = STATE_DONE Or CLng(job("attempts")) >= maxJobAttempts Then
+    If job("status") = STATE_DONE Or CLng(job("attempts")) >= maxJobAttempts Or JobTimedOut(job) Then
         Exit Function
     End If
     If interruptedJobNumber > 0 Then
@@ -237,6 +238,7 @@ Private Function ArtifactsValid(ByVal j As Object) As Boolean
 End Function
 
 Private Sub JobStage(ByVal j As Object, ByVal stage As String)
+    CheckExecutionBudget
     j("stage") = stage
     SaveCheckpoint
     Log "STAGE " & CStr(j("out")) & " | " & stage
